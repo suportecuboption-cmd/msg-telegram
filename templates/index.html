@@ -143,16 +143,84 @@
     /* ── Divider ── */
     .divider { height: 1px; background: var(--border); margin: 18px 0; }
 
+    /* ── Mobile navbar ── */
+    .mobile-navbar {
+      display: none; position: fixed; top: 0; left: 0; right: 0; height: 56px;
+      background: var(--sidebar); border-bottom: 1px solid var(--border);
+      align-items: center; padding: 0 16px; z-index: 200; gap: 12px;
+    }
+    .hamburger-btn {
+      background: none; border: none; color: rgba(255,255,255,.8);
+      font-size: 1.15rem; padding: 8px; cursor: pointer;
+      border-radius: 8px; line-height: 1; flex-shrink: 0;
+    }
+    .hamburger-btn:hover { background: rgba(255,255,255,.08); }
+    .mobile-logo { font-weight: 700; font-size: .95rem; color: white; flex: 1; }
+    .sidebar-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.55); z-index: 150;
+    }
+    .sidebar-overlay.active { display: block; }
+
+    /* ── Responsive ── */
     @media (max-width: 768px) {
-      .sidebar { width: 100%; min-height: auto; position: relative; flex-direction: row; flex-wrap: wrap; }
-      .main { margin-left: 0; padding: 16px; }
+      .mobile-navbar { display: flex; }
+
+      .sidebar {
+        position: fixed; left: -240px; top: 0;
+        height: 100vh; width: 220px; min-height: unset;
+        z-index: 160; transition: left .25s ease;
+      }
+      .sidebar.open { left: 0; }
+
+      .main { margin-left: 0; padding: 72px 14px 28px; }
+
+      /* Page header empilhado */
+      .page-header { flex-direction: column; gap: 10px; align-items: stretch; margin-bottom: 18px; }
+      .page-header .btn { width: 100%; }
+
+      /* Cards de mensagem */
+      .msg-preview { max-width: 100%; }
+      .msg-header { flex-direction: column; gap: 8px; }
+      .msg-actions { justify-content: flex-end; }
+
+      /* Config rows — colunas em stack */
+      .config-row > [class*="col-"] {
+        width: 100% !important; max-width: 100% !important; flex: 0 0 100%;
+      }
+      .config-row > .col-auto { width: 100% !important; text-align: right; }
+
+      /* Bot card — botões em linha */
+      .bot-card > div > div:last-child { flex-direction: row !important; flex-wrap: wrap; }
+
+      /* Toast — largura total */
+      .toast-wrap { right: 12px; left: 12px; bottom: 12px; }
+      .toast-item { min-width: unset; width: 100%; }
+
+      /* Modals — margem menor */
+      .modal-dialog { margin: 10px; max-width: calc(100vw - 20px); }
+      .modal-dialog.modal-xl { max-width: calc(100vw - 20px); }
     }
   </style>
 </head>
 <body>
 
+<!-- Mobile top navbar -->
+<div class="mobile-navbar">
+  <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Menu">
+    <i class="fas fa-bars"></i>
+  </button>
+  <span class="mobile-logo"><i class="fab fa-telegram me-2" style="color:var(--accent);"></i>Bot Manager</span>
+  <div class="status-pill">
+    <span class="dot offline" id="status-dot-mob"></span>
+  </div>
+</div>
+
+<!-- Sidebar overlay (mobile) -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
 <!-- Sidebar -->
-<aside class="sidebar">
+<aside class="sidebar" id="sidebar">
   <div class="sidebar-logo">
     <div class="logo-icon"><i class="fab fa-telegram"></i></div>
     <span class="logo-text">Bot Manager</span>
@@ -397,9 +465,22 @@ const DAYS = [
 const getMsgModal  = () => bootstrap.Modal.getOrCreateInstance(document.getElementById("msgModal"));
 const getSendModal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById("sendModal"));
 
+// ───────────────────────── Mobile sidebar ────────────────
+function toggleSidebar() {
+  const sb = document.getElementById("sidebar");
+  const ov = document.getElementById("sidebar-overlay");
+  const open = sb.classList.toggle("open");
+  ov.classList.toggle("active", open);
+}
+function closeSidebar() {
+  document.getElementById("sidebar").classList.remove("open");
+  document.getElementById("sidebar-overlay").classList.remove("active");
+}
+
 // ───────────────────────── Bot status ────────────────────
 async function checkStatus() {
   const dot    = document.getElementById("status-dot");
+  const dotMob = document.getElementById("status-dot-mob");
   const label  = document.getElementById("bot-status");
   const name   = document.getElementById("bot-name");
   try {
@@ -407,17 +488,20 @@ async function checkStatus() {
     const data = await r.json();
     if (data.online) {
       dot.classList.remove("offline");
+      dotMob.classList.remove("offline");
       label.textContent = "Bot online";
       label.style.color = "var(--success)";
       name.textContent  = `@${data.username}`;
     } else {
       dot.classList.add("offline");
+      dotMob.classList.add("offline");
       label.textContent = "Bot offline";
       label.style.color = "var(--danger)";
       name.textContent  = data.reason || "";
     }
   } catch {
     dot.classList.add("offline");
+    dotMob.classList.add("offline");
     label.textContent = "Sem conexão";
     label.style.color = "var(--danger)";
     name.textContent  = "";
@@ -451,6 +535,7 @@ function showPage(page, el) {
   document.getElementById("page-config").style.display   = page === "config"   ? "" : "none";
   if (page === "config") renderConfig();
   if (page === "bot")    renderBots();
+  closeSidebar();
 }
 
 // ═════════════════════════ MESSAGES PAGE ═════════════════
