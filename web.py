@@ -171,18 +171,31 @@ def create_app() -> Flask:
 
     @app.route("/api/status", methods=["GET"])
     def get_status():
+        # Caminho 1: bot rodando via main.py — usa a conexão ativa
         bot = _manager.bot if _manager else None
-        if not bot or not _loop:
-            return jsonify({"online": False, "reason": "Bot não inicializado"})
+        if bot and _loop:
+            try:
+                future = asyncio.run_coroutine_threadsafe(bot.get_me(), _loop)
+                info = future.result(timeout=5)
+                return jsonify({
+                    "online": True,
+                    "name": info.full_name,
+                    "username": info.username,
+                    "id": info.id,
+                })
+            except Exception:
+                pass  # cai para verificação direta abaixo
+
+        # Caminho 2: sem BotManager ativo — verifica o token do config diretamente
         try:
-            future = asyncio.run_coroutine_threadsafe(bot.get_me(), _loop)
-            info = future.result(timeout=5)
-            return jsonify({
-                "online": True,
-                "name": info.full_name,
-                "username": info.username,
-                "id": info.id,
-            })
+            cfg = _load_config()
+            active_token = cfg.get("bot_token", "")
+            # Tenta também pelo bot marcado como active na lista
+            for b in cfg.get("bots", []):
+                if b.get("active"):
+                    active_token = b.get("token", active_token)
+                    break
+            return jsonify(_check_token(active_token))
         except Exception as exc:
             return jsonify({"online": False, "reason": str(exc)})
 
