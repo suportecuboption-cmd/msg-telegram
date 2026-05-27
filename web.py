@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import urllib.error
 import urllib.request
 import uuid
@@ -11,8 +12,9 @@ from flask import Flask, jsonify, request, render_template
 
 logger = logging.getLogger(__name__)
 
-CONFIG_FILE = Path("config.json")
-MESSAGES_FILE = Path("messages.json")
+_DATA = Path(os.getenv("DATA_DIR", "."))
+CONFIG_FILE = _DATA / "config.json"
+MESSAGES_FILE = _DATA / "messages.json"
 
 _manager = None
 _loop: Optional[asyncio.AbstractEventLoop] = None

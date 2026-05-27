@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -9,7 +10,8 @@ from apscheduler.triggers.cron import CronTrigger
 
 logger = logging.getLogger(__name__)
 
-MESSAGES_FILE = Path("messages.json")
+_DATA = Path(os.getenv("DATA_DIR", "."))
+MESSAGES_FILE = _DATA / "messages.json"
 CONFIG_FILE = Path("config.json")
 
 DAYS_MAP = {

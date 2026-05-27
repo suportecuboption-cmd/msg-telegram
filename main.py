@@ -13,24 +13,58 @@ Pré-requisitos:
 import asyncio
 import json
 import logging
+import os
+import shutil
 import sys
 import threading
 from pathlib import Path
+
+_DATA = Path(os.getenv("DATA_DIR", "."))
+_CONFIG_FILE = _DATA / "config.json"
+_MESSAGES_FILE = _DATA / "messages.json"
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.FileHandler("bot.log", encoding="utf-8"),
         logging.StreamHandler(sys.stdout),
     ],
 )
 logger = logging.getLogger(__name__)
 
 
+def _init_data_dir() -> None:
+    """Copia arquivos padrão para DATA_DIR na primeira execução."""
+    _DATA.mkdir(parents=True, exist_ok=True)
+
+    if not _CONFIG_FILE.exists():
+        src = Path("config.example.json")
+        if src.exists():
+            shutil.copy(src, _CONFIG_FILE)
+            logger.info("config.json criado a partir do exemplo em %s", _DATA)
+
+    if not _MESSAGES_FILE.exists():
+        src = Path("messages.default.json")
+        if src.exists():
+            shutil.copy(src, _MESSAGES_FILE)
+        else:
+            _MESSAGES_FILE.write_text('{"messages": []}', encoding="utf-8")
+        logger.info("messages.json inicializado em %s", _DATA)
+
+
 def load_config() -> dict:
-    with open("config.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+    with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    # Variáveis de ambiente têm prioridade (Railway / Docker)
+    token = os.getenv("BOT_TOKEN")
+    if token:
+        cfg["bot_token"] = token
+        for b in cfg.get("bots", []):
+            if b.get("active"):
+                b["token"] = token
+
+    return cfg
 
 
 class BotManager:
@@ -107,6 +141,7 @@ class BotManager:
 
 
 async def run() -> None:
+    _init_data_dir()
     config = load_config()
     loop = asyncio.get_running_loop()
     manager = BotManager()
@@ -129,7 +164,7 @@ async def run() -> None:
     flask_app = web_module.create_app()
     web_module.set_context(manager, loop, reload_cb, restart_cb)
 
-    port = config.get("web_port", 5000)
+    port = int(os.getenv("PORT", config.get("web_port", 5000)))
     flask_thread = threading.Thread(
         target=lambda: flask_app.run(
             host="0.0.0.0", port=port, debug=False, use_reloader=False
