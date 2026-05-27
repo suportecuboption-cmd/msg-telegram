@@ -11,7 +11,7 @@ from apscheduler.triggers.cron import CronTrigger
 logger = logging.getLogger(__name__)
 
 _DATA = Path(os.getenv("DATA_DIR", "."))
-MESSAGES_FILE = _DATA / "messages.json"
+MESSAGES_FILE = _DATA / "messages.json"  # usado apenas no modo JSON local
 CONFIG_FILE = Path("config.json")
 
 DAYS_MAP = {
@@ -23,18 +23,18 @@ DAYS_MAP = {
 
 
 def load_messages() -> dict:
-    with open(MESSAGES_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    import db
+    return db.load_messages()
 
 
 def load_config() -> dict:
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    import db
+    return db.load_config()
 
 
 def save_messages(data: dict) -> None:
-    with open(MESSAGES_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    import db
+    db.save_messages(data)
 
 
 def build_keyboard(button_keys: list, config: dict) -> Optional[InlineKeyboardMarkup]:

@@ -34,37 +34,32 @@ logger = logging.getLogger(__name__)
 
 
 def _init_data_dir() -> None:
-    """Copia arquivos padrão para DATA_DIR na primeira execução."""
+    """Garante que DATA_DIR existe com os arquivos padrão."""
     _DATA.mkdir(parents=True, exist_ok=True)
 
-    if not _CONFIG_FILE.exists():
-        src = Path("config.example.json")
-        if src.exists():
-            shutil.copy(src, _CONFIG_FILE)
-            logger.info("config.json criado a partir do exemplo em %s", _DATA)
+    import db as db_module
+    if not db_module.use_postgres():
+        if not _CONFIG_FILE.exists():
+            src = Path("config.example.json")
+            if src.exists():
+                shutil.copy(src, _CONFIG_FILE)
+                logger.info("config.json criado em %s", _DATA)
 
-    if not _MESSAGES_FILE.exists():
-        src = Path("messages.default.json")
-        if src.exists():
-            shutil.copy(src, _MESSAGES_FILE)
-        else:
-            _MESSAGES_FILE.write_text('{"messages": []}', encoding="utf-8")
-        logger.info("messages.json inicializado em %s", _DATA)
+        if not _MESSAGES_FILE.exists():
+            src = Path("messages.default.json")
+            if src.exists():
+                shutil.copy(src, _MESSAGES_FILE)
+            else:
+                _MESSAGES_FILE.write_text('{"messages": []}', encoding="utf-8")
+            logger.info("messages.json inicializado em %s", _DATA)
+    else:
+        db_module.init_db()
+        db_module.migrate_from_json()
 
 
 def load_config() -> dict:
-    with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
-
-    # Variáveis de ambiente têm prioridade (Railway / Docker)
-    token = os.getenv("BOT_TOKEN")
-    if token:
-        cfg["bot_token"] = token
-        for b in cfg.get("bots", []):
-            if b.get("active"):
-                b["token"] = token
-
-    return cfg
+    import db as db_module
+    return db_module.load_config()
 
 
 class BotManager:

@@ -1,20 +1,16 @@
 import asyncio
 import json
 import logging
-import os
 import urllib.error
 import urllib.request
 import uuid
-from pathlib import Path
 from typing import Optional, Callable
 
 from flask import Flask, jsonify, request, render_template
 
 logger = logging.getLogger(__name__)
 
-_DATA = Path(os.getenv("DATA_DIR", "."))
-CONFIG_FILE = _DATA / "config.json"
-MESSAGES_FILE = _DATA / "messages.json"
+import db as _db
 
 _manager = None
 _loop: Optional[asyncio.AbstractEventLoop] = None
@@ -34,24 +30,16 @@ def set_context(manager, loop: asyncio.AbstractEventLoop,
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _load_config() -> dict:
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
+    return _db.load_config()
 
 def _save_config(data: dict) -> None:
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
+    _db.save_config(data)
 
 def _load_messages() -> dict:
-    with open(MESSAGES_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
+    return _db.load_messages()
 
 def _save_messages(data: dict) -> None:
-    with open(MESSAGES_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
+    _db.save_messages(data)
 
 def _ensure_schedule_ids(schedules: list) -> list:
     for s in schedules:
@@ -229,7 +217,6 @@ def create_app() -> Flask:
     @app.route("/api/messages", methods=["POST"])
     def create_message():
         data = request.get_json(force=True)
-        store = _load_messages()
         message = {
             "id": uuid.uuid4().hex[:8],
             "name": data.get("name", "Nova Mensagem"),
@@ -238,8 +225,7 @@ def create_app() -> Flask:
             "active": data.get("active", True),
             "schedules": _ensure_schedule_ids(data.get("schedules", [])),
         }
-        store["messages"].append(message)
-        _save_messages(store)
+        _db.upsert_message(message)
         if _reload_callback:
             _reload_callback()
         return jsonify(message), 201
@@ -247,23 +233,16 @@ def create_app() -> Flask:
     @app.route("/api/messages/<message_id>", methods=["PUT"])
     def update_message(message_id):
         data = request.get_json(force=True)
-        store = _load_messages()
-        for i, msg in enumerate(store["messages"]):
-            if msg["id"] == message_id:
-                data["id"] = message_id
-                data["schedules"] = _ensure_schedule_ids(data.get("schedules", []))
-                store["messages"][i] = data
-                _save_messages(store)
-                if _reload_callback:
-                    _reload_callback()
-                return jsonify(data)
-        return jsonify({"error": "Mensagem não encontrada"}), 404
+        data["id"] = message_id
+        data["schedules"] = _ensure_schedule_ids(data.get("schedules", []))
+        _db.upsert_message(data)
+        if _reload_callback:
+            _reload_callback()
+        return jsonify(data)
 
     @app.route("/api/messages/<message_id>", methods=["DELETE"])
-    def delete_message(message_id):
-        store = _load_messages()
-        store["messages"] = [m for m in store["messages"] if m["id"] != message_id]
-        _save_messages(store)
+    def delete_message_route(message_id):
+        _db.delete_message(message_id)
         if _reload_callback:
             _reload_callback()
         return jsonify({"success": True})
