@@ -1,0 +1,37 @@
+{
+  "messages": [
+    {
+      "id": "exemplo1",
+      "name": "Mensagem de Bom Dia",
+      "text": "🌅 <b>Bom dia!</b>\n\nMercado abrindo em breve. Fique atento às oportunidades de hoje!\n\nAcesse sua corretora e confira as análises disponíveis.",
+      "image": null,
+      "active": true,
+      "schedules": [
+        {
+          "id": "sched1",
+          "group": "group1",
+          "time": "08:00",
+          "days": ["mon", "tue", "wed", "thu", "fri"],
+          "buttons": ["broker", "tutorial", "course"],
+          "active": true
+        },
+        {
+          "id": "sched2",
+          "group": "group2",
+          "time": "08:05",
+          "days": ["mon", "tue", "wed", "thu", "fri"],
+          "buttons": ["broker", "tutorial"],
+          "active": true
+        },
+        {
+          "id": "sched3",
+          "group": "group3",
+          "time": "08:10",
+          "days": ["mon", "tue", "wed", "thu", "fri"],
+          "buttons": ["broker", "tutorial"],
+          "active": true
+        }
+      ]
+    }
+  ]
+}

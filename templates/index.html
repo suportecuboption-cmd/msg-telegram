@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telegram Bot Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d0f1a;
+      --card: #13162a;
+      --card2: #1a1e35;
+      --sidebar: #0b0d1c;
+      --border: rgba(255,255,255,0.07);
+      --accent: #7c3aed;
+      --accent2: #9f67ff;
+      --success: #10b981;
+      --danger: #ef4444;
+      --text-muted: rgba(255,255,255,0.45);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { background: var(--bg); color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; min-height: 100vh; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 220px; min-height: 100vh; background: var(--sidebar);
+      border-right: 1px solid var(--border); position: fixed; left: 0; top: 0;
+      display: flex; flex-direction: column; z-index: 100;
+    }
+    .sidebar-logo {
+      display: flex; align-items: center; gap: 10px;
+      padding: 22px 18px 16px; border-bottom: 1px solid var(--border);
+    }
+    .logo-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), #4f46e5);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .logo-icon i { color: white; font-size: 1rem; }
+    .logo-text { font-weight: 700; font-size: 1rem; color: white; }
+    .nav-section { padding: 12px 10px 6px; }
+    .nav-label { font-size: .65rem; letter-spacing: .1em; color: var(--text-muted); text-transform: uppercase; padding: 0 8px; margin-bottom: 4px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: rgba(255,255,255,.6); cursor: pointer; font-size: .9rem; transition: all .15s; text-decoration: none; margin-bottom: 2px; }
+    .nav-item:hover { color: white; background: rgba(124,58,237,.15); }
+    .nav-item.active { color: white; background: rgba(124,58,237,.25); border-left: 2px solid var(--accent); }
+    .nav-item i { width: 16px; text-align: center; opacity: .8; }
+    .sidebar-footer { margin-top: auto; padding: 16px 18px; border-top: 1px solid var(--border); }
+    .status-pill { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--text-muted); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); animation: blink 2s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+    .dot.offline { background: var(--danger); animation: none; opacity: .8; }
+
+    /* ── Main ── */
+    .main { margin-left: 220px; padding: 28px 32px; min-height: 100vh; }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; }
+    .page-title { font-size: 1.5rem; font-weight: 700; color: white; margin: 0 0 4px; }
+    .page-subtitle { font-size: .875rem; color: var(--text-muted); margin: 0; }
+
+    /* ── Cards ── */
+    .card-box { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 14px; transition: border-color .2s, box-shadow .2s; }
+    .card-box:hover { border-color: rgba(124,58,237,.35); box-shadow: 0 4px 24px rgba(124,58,237,.08); }
+    .msg-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .msg-title { font-weight: 600; font-size: .95rem; color: white; margin-bottom: 2px; }
+    .msg-preview { font-size: .82rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; margin-bottom: 10px; }
+    .msg-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .sched-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+    .sched-tag { font-size: .72rem; padding: 3px 9px; border-radius: 20px; border: 1px solid rgba(124,58,237,.4); color: #c4b5fd; background: rgba(124,58,237,.1); white-space: nowrap; }
+    .sched-tag.inactive { border-color: var(--border); color: var(--text-muted); background: rgba(255,255,255,.04); }
+    .badge-img { font-size: .7rem; padding: 2px 7px; border-radius: 4px; background: rgba(255,255,255,.08); color: rgba(255,255,255,.5); }
+
+    /* ── Status ── */
+    .status-on  { color: var(--success); font-size: .75rem; }
+    .status-off { color: #6b7280;        font-size: .75rem; }
+
+    /* ── Empty state ── */
+    .empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+    .empty i { font-size: 2.5rem; margin-bottom: 14px; opacity: .25; display: block; }
+
+    /* ── Buttons ── */
+    .btn-accent  { background: var(--accent); border: none; color: white; }
+    .btn-accent:hover { background: #6d28d9; color: white; }
+    .btn-xs { padding: 5px 10px; font-size: .78rem; border-radius: 7px; }
+    .btn-icon { width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; font-size: .8rem; }
+
+    /* ── Forms ── */
+    .form-control, .form-select {
+      background: rgba(255,255,255,.05); border: 1px solid var(--border);
+      color: #e2e8f0; border-radius: 8px;
+    }
+    .form-control:focus, .form-select:focus {
+      background: rgba(255,255,255,.08); border-color: var(--accent);
+      color: white; box-shadow: 0 0 0 3px rgba(124,58,237,.2);
+    }
+    .form-control::placeholder { color: rgba(255,255,255,.25); }
+    .form-label { font-size: .82rem; color: rgba(255,255,255,.7); margin-bottom: 5px; }
+    .form-check-input { background-color: rgba(255,255,255,.1); border-color: rgba(255,255,255,.2); }
+    .form-check-input:checked { background-color: var(--accent); border-color: var(--accent); }
+    .form-check-label { font-size: .85rem; color: rgba(255,255,255,.7); }
+    textarea.form-control { resize: vertical; min-height: 120px; }
+
+    /* ── Modal ── */
+    .modal-content { background: var(--card); border: 1px solid var(--border); border-radius: 16px; }
+    .modal-header { border-bottom: 1px solid var(--border); padding: 18px 22px 14px; }
+    .modal-footer { border-top: 1px solid var(--border); padding: 14px 22px 18px; }
+    .modal-title { font-weight: 700; font-size: 1.05rem; }
+
+    /* ── Schedule item ── */
+    .sched-item { background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 10px; }
+    .sched-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: .85rem; font-weight: 600; }
+    .section-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--accent2); font-weight: 600; margin-bottom: 12px; }
+
+    /* ── Config rows ── */
+    .config-row { background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 8px; }
+
+    /* ── Bot cards ── */
+    .bot-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; margin-bottom: 14px; transition: border-color .2s; position: relative; overflow: hidden; }
+    .bot-card:hover { border-color: rgba(124,58,237,.3); }
+    .bot-card.active-bot { border-color: rgba(124,58,237,.5); }
+    .bot-card.active-bot::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg,var(--accent),#4f46e5); }
+    .bot-status-badge { display:inline-flex; align-items:center; gap:6px; font-size:.78rem; padding:4px 10px; border-radius:20px; }
+    .bot-status-badge.online  { background:rgba(16,185,129,.15); border:1px solid rgba(16,185,129,.3); color:#34d399; }
+    .bot-status-badge.offline { background:rgba(239,68,68,.12);  border:1px solid rgba(239,68,68,.25);  color:#f87171; }
+    .bot-status-badge.checking{ background:rgba(255,255,255,.06); border:1px solid var(--border);         color:var(--text-muted); }
+    .active-badge { font-size:.7rem; padding:3px 8px; border-radius:20px; background:rgba(124,58,237,.25); border:1px solid rgba(124,58,237,.5); color:#c4b5fd; }
+    .token-field { font-family:monospace; letter-spacing:.03em; font-size:.85rem; }
+    .token-row { display:flex; gap:8px; align-items:center; }
+    .token-row .form-control { flex:1; }
+
+    /* ── Toast ── */
+    .toast-wrap { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+    .toast-item { padding: 12px 18px; border-radius: 10px; font-size: .875rem; color: white; display: flex; align-items: center; gap: 10px; animation: slideIn .25s ease; box-shadow: 0 4px 20px rgba(0,0,0,.4); min-width: 260px; }
+    .toast-item.success { background: #065f46; border: 1px solid #10b981; }
+    .toast-item.danger  { background: #7f1d1d; border: 1px solid #ef4444; }
+    .toast-item.info    { background: #1e3a5f; border: 1px solid #3b82f6; }
+    @keyframes slideIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+
+    /* ── Day pills ── */
+    .day-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+    .day-pill { padding: 4px 10px; border-radius: 20px; font-size: .75rem; cursor: pointer; border: 1px solid var(--border); color: var(--text-muted); transition: all .15s; user-select: none; }
+    .day-pill.selected { background: rgba(124,58,237,.25); border-color: var(--accent); color: #c4b5fd; }
+
+    /* ── Divider ── */
+    .divider { height: 1px; background: var(--border); margin: 18px 0; }
+
+    @media (max-width: 768px) {
+      .sidebar { width: 100%; min-height: auto; position: relative; flex-direction: row; flex-wrap: wrap; }
+      .main { margin-left: 0; padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon"><i class="fab fa-telegram"></i></div>
+    <span class="logo-text">Bot Manager</span>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Menu</div>
+    <a class="nav-item active" onclick="showPage('messages',this)">
+      <i class="fas fa-calendar-alt"></i> Mensagens
+    </a>
+    <a class="nav-item" onclick="showPage('bot',this)">
+      <i class="fab fa-telegram"></i> Bot
+    </a>
+    <a class="nav-item" onclick="showPage('config',this)">
+      <i class="fas fa-sliders"></i> Configurações
+    </a>
+  </div>
+  <div class="sidebar-footer">
+    <div class="status-pill">
+      <span class="dot" id="status-dot"></span>
+      <div style="min-width:0;">
+        <div id="bot-status" style="color:rgba(255,255,255,.5);font-size:.8rem;">Verificando...</div>
+        <div id="bot-name" style="color:rgba(255,255,255,.3);font-size:.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:155px;"></div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- Main -->
+<main class="main">
+
+  <!-- ── MENSAGENS ── -->
+  <div id="page-messages">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Mensagens Agendadas</h1>
+        <p class="page-subtitle" id="msg-count">Carregando...</p>
+      </div>
+      <button class="btn btn-accent px-4" onclick="openAdd()">
+        <i class="fas fa-plus me-2"></i>Nova Mensagem
+      </button>
+    </div>
+    <div id="msg-list"></div>
+  </div>
+
+  <!-- ── BOT ── -->
+  <div id="page-bot" style="display:none;">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Instâncias do Bot</h1>
+        <p class="page-subtitle" id="bot-page-subtitle">Gerencie os tokens e ative o bot desejado</p>
+      </div>
+      <button class="btn btn-accent px-4" onclick="openBotModal()">
+        <i class="fas fa-plus me-2"></i>Adicionar Bot
+      </button>
+    </div>
+    <div id="bots-list"></div>
+  </div>
+
+  <!-- ── CONFIGURAÇÕES ── -->
+  <div id="page-config" style="display:none;">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Configurações</h1>
+        <p class="page-subtitle">Grupos e botões do bot</p>
+      </div>
+      <button class="btn btn-accent px-4" onclick="saveConfig()">
+        <i class="fas fa-save me-2"></i>Salvar
+      </button>
+    </div>
+
+    <!-- Groups -->
+    <div class="card-box mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="section-label mb-0">Grupos do Telegram</div>
+        <button class="btn btn-xs btn-outline-secondary" onclick="addGroupRow()">
+          <i class="fas fa-plus me-1"></i>Adicionar grupo
+        </button>
+      </div>
+      <div id="groups-list"></div>
+    </div>
+
+    <!-- Buttons -->
+    <div class="card-box">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="section-label mb-0">Botões</div>
+        <button class="btn btn-xs btn-outline-secondary" onclick="addButtonRow()">
+          <i class="fas fa-plus me-1"></i>Adicionar botão
+        </button>
+      </div>
+      <div id="buttons-list"></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── MODAL BOT ── -->
+<div class="modal fade" id="botModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="bot-modal-title">Adicionar Bot</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="mb-3">
+          <label class="form-label">Nome do bot <span style="color:var(--text-muted);font-size:.75rem;">(referência interna)</span></label>
+          <input type="text" class="form-control" id="bot-f-name" placeholder="Ex: Bot Principal">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Token</label>
+          <div class="token-row">
+            <input type="password" class="form-control token-field" id="bot-f-token" placeholder="123456789:ABCdefGHIjklmno...">
+            <button class="btn btn-outline-secondary btn-icon" onclick="toggleTokenVis('bot-f-token', this)" title="Mostrar/ocultar token">
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Preview de verificação -->
+        <div id="bot-verify-result" style="display:none;" class="p-3 rounded-2 mb-2" style="font-size:.85rem;"></div>
+
+        <button class="btn btn-outline-primary w-100 mt-1" onclick="verifyModalToken()">
+          <i class="fas fa-plug me-2"></i>Testar conexão
+        </button>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-accent px-4" onclick="saveBotModal()">
+          <i class="fas fa-save me-2"></i>Salvar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL ADD/EDIT ── -->
+<div class="modal fade" id="msgModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-title">Nova Mensagem</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="row g-4">
+
+          <!-- Coluna esquerda: conteúdo -->
+          <div class="col-lg-5">
+            <div class="section-label">Conteúdo da Mensagem</div>
+
+            <div class="mb-3">
+              <label class="form-label">Nome interno</label>
+              <input type="text" class="form-control" id="f-name" placeholder="Ex: Abertura de mercado">
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Texto <span style="color:var(--text-muted);font-size:.75rem;">(suporta HTML: &lt;b&gt; &lt;i&gt; &lt;a&gt;)</span></label>
+              <textarea class="form-control" id="f-text" rows="7" placeholder="Digite o conteúdo da mensagem..."></textarea>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">URL da imagem <span style="color:var(--text-muted);font-size:.75rem;">(opcional)</span></label>
+              <input type="url" class="form-control" id="f-image" placeholder="https://...">
+            </div>
+
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="f-active" checked>
+              <label class="form-check-label" for="f-active">Mensagem ativa</label>
+            </div>
+          </div>
+
+          <!-- Coluna direita: agendamentos -->
+          <div class="col-lg-7">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="section-label mb-0">Agendamentos por Grupo</div>
+              <button class="btn btn-xs btn-outline-primary" onclick="addSchedItem()">
+                <i class="fas fa-plus me-1"></i>Adicionar
+              </button>
+            </div>
+            <div id="scheds-container">
+              <div class="empty" id="scheds-empty">
+                <i class="fas fa-clock"></i>
+                <div>Nenhum agendamento ainda.<br>Clique em "Adicionar" para criar.</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-accent px-4" onclick="saveMessage()">
+          <i class="fas fa-save me-2"></i>Salvar Mensagem
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL ENVIAR AGORA ── -->
+<div class="modal fade" id="sendModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Enviar Agora</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <p style="color:var(--text-muted);font-size:.875rem;" class="mb-3">Escolha para qual grupo enviar a mensagem imediatamente:</p>
+        <div id="send-group-opts"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-success px-4" onclick="confirmSend()">
+          <i class="fas fa-paper-plane me-2"></i>Enviar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toasts -->
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+"use strict";
+
+// ───────────────────────── State ─────────────────────────
+let cfg = {};
+let store = { messages: [] };
+let editingId = null;
+let sendMsgId = null;
+let schedIdx = 0;
+
+const DAYS = [
+  { k: "mon", l: "Seg" }, { k: "tue", l: "Ter" }, { k: "wed", l: "Qua" },
+  { k: "thu", l: "Qui" }, { k: "fri", l: "Sex" }, { k: "sat", l: "Sáb" }, { k: "sun", l: "Dom" }
+];
+
+// ───────────────────────── Bootstrap modals ──────────────
+const getMsgModal  = () => bootstrap.Modal.getOrCreateInstance(document.getElementById("msgModal"));
+const getSendModal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById("sendModal"));
+
+// ───────────────────────── Bot status ────────────────────
+async function checkStatus() {
+  const dot    = document.getElementById("status-dot");
+  const label  = document.getElementById("bot-status");
+  const name   = document.getElementById("bot-name");
+  try {
+    const r    = await fetch("/api/status");
+    const data = await r.json();
+    if (data.online) {
+      dot.classList.remove("offline");
+      label.textContent = "Bot online";
+      label.style.color = "var(--success)";
+      name.textContent  = `@${data.username}`;
+    } else {
+      dot.classList.add("offline");
+      label.textContent = "Bot offline";
+      label.style.color = "var(--danger)";
+      name.textContent  = data.reason || "";
+    }
+  } catch {
+    dot.classList.add("offline");
+    label.textContent = "Sem conexão";
+    label.style.color = "var(--danger)";
+    name.textContent  = "";
+  }
+}
+
+// ───────────────────────── Init ──────────────────────────
+async function init() {
+  await Promise.all([fetchConfig(), fetchMessages()]);
+  renderMsgList();
+  checkStatus();
+  setInterval(checkStatus, 30000);
+}
+
+async function fetchConfig() {
+  const r = await fetch("/api/config");
+  cfg = await r.json();
+}
+
+async function fetchMessages() {
+  const r = await fetch("/api/messages");
+  store = await r.json();
+}
+
+// ───────────────────────── Navigation ────────────────────
+function showPage(page, el) {
+  document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+  el.classList.add("active");
+  document.getElementById("page-messages").style.display = page === "messages" ? "" : "none";
+  document.getElementById("page-bot").style.display      = page === "bot"      ? "" : "none";
+  document.getElementById("page-config").style.display   = page === "config"   ? "" : "none";
+  if (page === "config") renderConfig();
+  if (page === "bot")    renderBots();
+}
+
+// ═════════════════════════ MESSAGES PAGE ═════════════════
+
+function renderMsgList() {
+  const msgs = store.messages || [];
+  document.getElementById("msg-count").textContent =
+    msgs.length === 0 ? "Nenhuma mensagem" :
+    `${msgs.length} mensagem${msgs.length > 1 ? "s" : ""} configurada${msgs.length > 1 ? "s" : ""}`;
+
+  const list = document.getElementById("msg-list");
+  if (msgs.length === 0) {
+    list.innerHTML = `<div class="empty"><i class="fas fa-inbox"></i>Nenhuma mensagem agendada.<br>Clique em "Nova Mensagem" para começar.</div>`;
+    return;
+  }
+  list.innerHTML = msgs.map(renderMsgCard).join("");
+}
+
+function renderMsgCard(msg) {
+  const active = msg.active !== false;
+  const scheds = msg.schedules || [];
+
+  const tags = scheds.slice(0, 4).map(s => {
+    const gname = cfg.groups?.[s.group]?.name || s.group || "?";
+    const days  = (s.days || []).map(d => DAYS.find(x => x.k === d)?.l || d).join(" ");
+    const cls   = s.active !== false ? "sched-tag" : "sched-tag inactive";
+    return `<span class="${cls}"><i class="fas fa-clock" style="font-size:.65rem;opacity:.7;"></i> ${gname} · ${s.time} · ${days}</span>`;
+  }).join("");
+
+  const extra = scheds.length > 4
+    ? `<span class="sched-tag">+${scheds.length - 4} mais</span>` : "";
+
+  return `
+  <div class="card-box" id="card-${esc(msg.id)}">
+    <div class="msg-header">
+      <div style="min-width:0;flex:1;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+          <span class="msg-title">${esc(msg.name || "Sem nome")}</span>
+          <span class="${active ? "status-on" : "status-off"}">● ${active ? "Ativo" : "Inativo"}</span>
+          ${msg.image ? `<span class="badge-img"><i class="fas fa-image me-1"></i>Imagem</span>` : ""}
+        </div>
+        <div class="msg-preview">${esc((msg.text || "").replace(/<[^>]+>/g, "")).substring(0, 140)}</div>
+        <div class="sched-tags">${tags}${extra}${scheds.length === 0 ? `<span style="font-size:.78rem;color:var(--text-muted);"><i class="fas fa-exclamation-circle me-1"></i>Sem agendamentos</span>` : ""}</div>
+      </div>
+      <div class="msg-actions">
+        <button class="btn btn-outline-success btn-icon" onclick="openSend('${esc(msg.id)}')" title="Enviar agora"><i class="fas fa-paper-plane"></i></button>
+        <button class="btn btn-outline-primary btn-icon" onclick="openEdit('${esc(msg.id)}')" title="Editar"><i class="fas fa-pen"></i></button>
+        <button class="btn btn-outline-danger btn-icon" onclick="delMsg('${esc(msg.id)}')" title="Excluir"><i class="fas fa-trash"></i></button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ═════════════════════════ MODAL ADD/EDIT ════════════════
+
+function openAdd() {
+  editingId = null;
+  schedIdx = 0;
+  document.getElementById("modal-title").textContent = "Nova Mensagem";
+  document.getElementById("f-name").value  = "";
+  document.getElementById("f-text").value  = "";
+  document.getElementById("f-image").value = "";
+  document.getElementById("f-active").checked = true;
+  document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
+  document.getElementById("scheds-empty").style.display = "";
+  getMsgModal().show();
+}
+
+function openEdit(id) {
+  const msg = store.messages.find(m => m.id === id);
+  if (!msg) return;
+  editingId = id;
+  schedIdx = 0;
+  document.getElementById("modal-title").textContent = "Editar Mensagem";
+  document.getElementById("f-name").value  = msg.name  || "";
+  document.getElementById("f-text").value  = msg.text  || "";
+  document.getElementById("f-image").value = msg.image || "";
+  document.getElementById("f-active").checked = msg.active !== false;
+
+  document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
+  const hasScheds = (msg.schedules || []).length > 0;
+  document.getElementById("scheds-empty").style.display = hasScheds ? "none" : "";
+  (msg.schedules || []).forEach(s => appendSchedItem(s));
+  getMsgModal().show();
+}
+
+// ── Schedule items inside modal ──────────────────────────
+
+function addSchedItem() {
+  document.getElementById("scheds-empty").style.display = "none";
+  const firstGroup = Object.keys(cfg.groups || {})[0] || "";
+  appendSchedItem({
+    group: firstGroup,
+    time: "09:00",
+    days: ["mon", "tue", "wed", "thu", "fri"],
+    buttons: Object.keys(cfg.button_configs || {}),
+    active: true,
+  });
+}
+
+function appendSchedItem(sched) {
+  const idx = schedIdx++;
+  const container = document.getElementById("scheds-container");
+
+  const groupOpts = Object.entries(cfg.groups || {})
+    .map(([k, g]) => `<option value="${esc(k)}" ${sched.group === k ? "selected" : ""}>${esc(g.name || k)}</option>`)
+    .join("");
+
+  const dayPills = DAYS.map(d => `
+    <span class="day-pill ${(sched.days || []).includes(d.k) ? "selected" : ""}"
+          data-day="${d.k}" onclick="toggleDay(this)">${d.l}</span>`).join("");
+
+  const btnChecks = Object.entries(cfg.button_configs || {}).map(([k, b]) => `
+    <div class="form-check form-check-inline me-2">
+      <input class="form-check-input btn-check-input" type="checkbox" id="bc-${idx}-${k}" value="${esc(k)}"
+             ${(sched.buttons || []).includes(k) ? "checked" : ""}>
+      <label class="form-check-label" for="bc-${idx}-${k}" style="font-size:.82rem;">${esc(b.label || k)}</label>
+    </div>`).join("");
+
+  const div = document.createElement("div");
+  div.className = "sched-item";
+  div.dataset.idx = idx;
+  div.dataset.sid = sched.id || "";
+  div.innerHTML = `
+    <div class="sched-item-header">
+      <span>Agendamento</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input sched-active" type="checkbox" id="sa-${idx}" ${sched.active !== false ? "checked" : ""}>
+          <label class="form-check-label" for="sa-${idx}" style="font-size:.8rem;">Ativo</label>
+        </div>
+        <button class="btn btn-icon btn-outline-danger" onclick="this.closest('.sched-item').remove();checkEmpty()" style="width:28px;height:28px;font-size:.75rem;">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col-8">
+        <label class="form-label">Grupo</label>
+        <select class="form-select form-select-sm sched-group">${groupOpts}</select>
+      </div>
+      <div class="col-4">
+        <label class="form-label">Horário</label>
+        <input type="time" class="form-control form-control-sm sched-time" value="${sched.time || "09:00"}">
+      </div>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Dias da semana</label>
+      <div class="day-pills">${dayPills}</div>
+    </div>
+    <div>
+      <label class="form-label">Botões a exibir</label>
+      <div>${btnChecks || '<span style="color:var(--text-muted);font-size:.82rem;">Nenhum botão configurado</span>'}</div>
+    </div>`;
+  container.appendChild(div);
+}
+
+function toggleDay(el) {
+  el.classList.toggle("selected");
+}
+
+function checkEmpty() {
+  const items = document.querySelectorAll("#scheds-container .sched-item");
+  document.getElementById("scheds-empty").style.display = items.length === 0 ? "" : "none";
+}
+
+function collectSchedules() {
+  return Array.from(document.querySelectorAll("#scheds-container .sched-item")).map(item => {
+    const days = Array.from(item.querySelectorAll(".day-pill.selected")).map(p => p.dataset.day);
+    const buttons = Array.from(item.querySelectorAll(".btn-check-input:checked")).map(cb => cb.value);
+    return {
+      id: item.dataset.sid || crypto.randomUUID().slice(0, 8),
+      group:   item.querySelector(".sched-group").value,
+      time:    item.querySelector(".sched-time").value,
+      days,
+      buttons,
+      active:  item.querySelector(".sched-active").checked,
+    };
+  });
+}
+
+async function saveMessage() {
+  const text = document.getElementById("f-text").value.trim();
+  if (!text) { toast("Digite o texto da mensagem", "danger"); return; }
+
+  const payload = {
+    name:      document.getElementById("f-name").value.trim() || "Sem nome",
+    text,
+    image:     document.getElementById("f-image").value.trim() || null,
+    active:    document.getElementById("f-active").checked,
+    schedules: collectSchedules(),
+  };
+
+  const url    = editingId ? `/api/messages/${editingId}` : "/api/messages";
+  const method = editingId ? "PUT" : "POST";
+
+  const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (r.ok) {
+    await fetchMessages();
+    renderMsgList();
+    getMsgModal().hide();
+    toast(editingId ? "Mensagem atualizada!" : "Mensagem criada!", "success");
+  } else {
+    toast("Erro ao salvar", "danger");
+  }
+}
+
+async function delMsg(id) {
+  if (!confirm("Excluir esta mensagem permanentemente?")) return;
+  const r = await fetch(`/api/messages/${id}`, { method: "DELETE" });
+  if (r.ok) {
+    await fetchMessages();
+    renderMsgList();
+    toast("Mensagem excluída", "success");
+  }
+}
+
+// ═════════════════════════ SEND NOW ══════════════════════
+
+function openSend(id) {
+  sendMsgId = id;
+  const groups = cfg.groups || {};
+  document.getElementById("send-group-opts").innerHTML = `
+    <div class="form-check mb-2">
+      <input class="form-check-input" type="radio" name="rg" id="rg-all" value="all" checked>
+      <label class="form-check-label" for="rg-all"><strong>Todos os grupos</strong></label>
+    </div>
+    ${Object.entries(groups).map(([k, g]) => `
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="radio" name="rg" id="rg-${esc(k)}" value="${esc(k)}">
+        <label class="form-check-label" for="rg-${esc(k)}">${esc(g.name || k)}</label>
+      </div>`).join("")}`;
+  getSendModal().show();
+}
+
+async function confirmSend() {
+  const sel = document.querySelector("input[name='rg']:checked")?.value;
+  const body = sel === "all" ? {} : { group: sel };
+  const r = await fetch(`/api/messages/${sendMsgId}/send-now`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+  });
+  const data = await r.json();
+  getSendModal().hide();
+  if (!r.ok) { toast(data.error || "Erro ao enviar", "danger"); return; }
+  const ok    = (data.results || []).filter(x => x.success).length;
+  const total = (data.results || []).length;
+  toast(`Enviado para ${ok}/${total} grupo(s)`, ok === total ? "success" : "info");
+}
+
+// ═════════════════════════ CONFIG PAGE ═══════════════════
+
+function renderConfig() {
+  renderGroupsList();
+  renderButtonsList();
+}
+
+function renderGroupsList() {
+  const groups = cfg.groups || {};
+  document.getElementById("groups-list").innerHTML =
+    Object.entries(groups).map(([k, g]) => `
+      <div class="config-row row g-2 align-items-end" data-gk="${esc(k)}">
+        <div class="col-2">
+          <label class="form-label">Chave</label>
+          <input class="form-control form-control-sm" value="${esc(k)}" readonly style="opacity:.5;cursor:not-allowed;">
+        </div>
+        <div class="col-3">
+          <label class="form-label">Nome</label>
+          <input class="form-control form-control-sm g-name" value="${esc(g.name || "")}" placeholder="Nome do grupo">
+        </div>
+        <div class="col-4">
+          <label class="form-label">ID do chat (ex: -1001234567890)</label>
+          <input class="form-control form-control-sm g-id" value="${esc(g.id || "")}" placeholder="-100...">
+        </div>
+        <div class="col-3">
+          <label class="form-label">Botões padrão</label>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;padding-top:2px;">
+            ${Object.keys(cfg.button_configs || {}).map(bk => `
+              <div class="form-check form-check-inline me-1">
+                <input class="form-check-input gdb" type="checkbox" id="gdb-${esc(k)}-${esc(bk)}" value="${esc(bk)}" ${(g.default_buttons || []).includes(bk) ? "checked" : ""}>
+                <label class="form-check-label" for="gdb-${esc(k)}-${esc(bk)}" style="font-size:.78rem;">${esc(bk)}</label>
+              </div>`).join("")}
+          </div>
+        </div>
+        <div class="col-auto ms-auto">
+          <button class="btn btn-icon btn-outline-danger" onclick="removeGroup('${esc(k)}')" style="margin-bottom:2px;"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>`).join("") || `<p style="color:var(--text-muted);font-size:.875rem;">Nenhum grupo configurado.</p>`;
+}
+
+function renderButtonsList() {
+  const btns = cfg.button_configs || {};
+  document.getElementById("buttons-list").innerHTML =
+    Object.entries(btns).map(([k, b]) => `
+      <div class="config-row row g-2 align-items-end" data-bk="${esc(k)}">
+        <div class="col-2">
+          <label class="form-label">Chave</label>
+          <input class="form-control form-control-sm" value="${esc(k)}" readonly style="opacity:.5;cursor:not-allowed;">
+        </div>
+        <div class="col-3">
+          <label class="form-label">Label do botão</label>
+          <input class="form-control form-control-sm b-label" value="${esc(b.label || "")}" placeholder="🏦 Texto">
+        </div>
+        <div class="col-5">
+          <label class="form-label">URL</label>
+          <input class="form-control form-control-sm b-url" value="${esc(b.url || "")}" placeholder="https://...">
+        </div>
+        <div class="col-auto ms-auto">
+          <button class="btn btn-icon btn-outline-danger" onclick="removeButton('${esc(k)}')" style="margin-bottom:2px;"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>`).join("") || `<p style="color:var(--text-muted);font-size:.875rem;">Nenhum botão configurado.</p>`;
+}
+
+function addGroupRow() {
+  const key = prompt("Chave do grupo (sem espaços, ex: group4):");
+  if (!key || !/^\w+$/.test(key)) return;
+  if (cfg.groups?.[key]) { toast("Chave já existe", "danger"); return; }
+  if (!cfg.groups) cfg.groups = {};
+  cfg.groups[key] = { id: "", name: "", default_buttons: [] };
+  renderGroupsList();
+}
+
+function removeGroup(key) {
+  if (!confirm(`Remover grupo "${key}"?`)) return;
+  delete cfg.groups[key];
+  renderGroupsList();
+}
+
+function addButtonRow() {
+  const key = prompt("Chave do botão (sem espaços, ex: whatsapp):");
+  if (!key || !/^\w+$/.test(key)) return;
+  if (cfg.button_configs?.[key]) { toast("Chave já existe", "danger"); return; }
+  if (!cfg.button_configs) cfg.button_configs = {};
+  cfg.button_configs[key] = { label: "", url: "" };
+  renderButtonsList();
+}
+
+function removeButton(key) {
+  if (!confirm(`Remover botão "${key}"?`)) return;
+  delete cfg.button_configs[key];
+  renderButtonsList();
+}
+
+async function saveConfig() {
+  const groups = {};
+  document.querySelectorAll("#groups-list .config-row").forEach(row => {
+    const k = row.dataset.gk;
+    const defBtns = Array.from(row.querySelectorAll(".gdb:checked")).map(cb => cb.value);
+    groups[k] = {
+      ...(cfg.groups[k] || {}),
+      name: row.querySelector(".g-name").value,
+      id:   row.querySelector(".g-id").value,
+      default_buttons: defBtns,
+    };
+  });
+
+  const button_configs = {};
+  document.querySelectorAll("#buttons-list .config-row").forEach(row => {
+    const k = row.dataset.bk;
+    button_configs[k] = {
+      label: row.querySelector(".b-label").value,
+      url:   row.querySelector(".b-url").value,
+    };
+  });
+
+  const r = await fetch("/api/config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ groups, button_configs }),
+  });
+
+  if (r.ok) {
+    cfg.groups = groups;
+    cfg.button_configs = button_configs;
+    toast("Configurações salvas!", "success");
+  } else {
+    toast("Erro ao salvar configurações", "danger");
+  }
+}
+
+// ═════════════════════════ UTILS ═════════════════════════
+
+function esc(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function toast(msg, type = "success") {
+  const wrap = document.getElementById("toast-wrap");
+  const el = document.createElement("div");
+  el.className = `toast-item ${type}`;
+  const icon = { success: "fa-check-circle", danger: "fa-times-circle", info: "fa-info-circle" }[type] || "fa-info-circle";
+  el.innerHTML = `<i class="fas ${icon}"></i><span>${esc(msg)}</span>`;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ═════════════════════════ BOT PAGE ═════════════════════
+
+let editingBotId = null;
+let _botsData = [];
+
+async function fetchBots() {
+  const r = await fetch("/api/bots");
+  _botsData = await r.json();
+  return _botsData;
+}
+
+async function renderBots() {
+  const bots = await fetchBots();
+  const list = document.getElementById("bots-list");
+  const sub  = document.getElementById("bot-page-subtitle");
+  sub.textContent = `${bots.length} instância${bots.length !== 1 ? "s" : ""} configurada${bots.length !== 1 ? "s" : ""}`;
+
+  if (bots.length === 0) {
+    list.innerHTML = `<div class="empty"><i class="fab fa-telegram"></i>Nenhum bot configurado.<br>Clique em "Adicionar Bot" para começar.</div>`;
+    return;
+  }
+
+  list.innerHTML = bots.map(b => renderBotCard(b)).join("");
+}
+
+function renderBotCard(b) {
+  const st      = b.status || {};
+  const online  = st.online === true;
+  const checking = st.online === undefined;
+  const badgeCls = checking ? "checking" : (online ? "online" : "offline");
+  const badgeTxt = checking ? "Verificando..." : (online ? "Online" : "Offline");
+  const badgeIcon= online ? "fa-check-circle" : "fa-times-circle";
+  const masked   = maskToken(b.token || "");
+  const botInfo  = online ? `<span style="color:rgba(255,255,255,.4);font-size:.8rem;">@${esc(st.username)} · ID ${st.id}</span>` : "";
+  const activeBadge = b.active ? `<span class="active-badge ms-2">Ativo</span>` : "";
+
+  return `
+  <div class="bot-card ${b.active ? "active-bot" : ""}" id="botcard-${esc(b.id)}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+      <div style="min-width:0;flex:1;">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px;">
+          <span style="font-weight:700;font-size:1rem;color:white;">${esc(b.name)}</span>
+          ${activeBadge}
+          <span class="bot-status-badge ${badgeCls}">
+            <i class="fas ${badgeIcon}" style="font-size:.7rem;"></i>${badgeTxt}
+          </span>
+          ${online ? `<span style="font-weight:600;color:#e2e8f0;font-size:.9rem;">${esc(st.name)}</span>` : ""}
+        </div>
+        <div style="font-family:monospace;font-size:.82rem;color:var(--text-muted);margin-bottom:6px;">${esc(masked)}</div>
+        ${botInfo}
+        ${!online && st.reason ? `<div style="font-size:.78rem;color:var(--danger);margin-top:4px;"><i class="fas fa-exclamation-triangle me-1"></i>${esc(st.reason)}</div>` : ""}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
+        ${!b.active ? `<button class="btn btn-xs btn-outline-primary" onclick="activateBot('${esc(b.id)}')"><i class="fas fa-bolt me-1"></i>Ativar</button>` : `<button class="btn btn-xs btn-outline-secondary" disabled><i class="fas fa-bolt me-1"></i>Ativo</button>`}
+        <button class="btn btn-xs btn-outline-secondary" onclick="openBotModal('${esc(b.id)}')"><i class="fas fa-pen me-1"></i>Editar</button>
+        <button class="btn btn-xs btn-outline-secondary" onclick="reverifyBot('${esc(b.id)}')"><i class="fas fa-sync me-1"></i>Verificar</button>
+        ${!b.active ? `<button class="btn btn-xs btn-outline-danger" onclick="deleteBot('${esc(b.id)}')"><i class="fas fa-trash"></i></button>` : ""}
+      </div>
+    </div>
+  </div>`;
+}
+
+function maskToken(token) {
+  if (!token || token === "SEU_TOKEN_AQUI") return "Token não configurado";
+  const parts = token.split(":");
+  if (parts.length !== 2) return token.substring(0, 8) + "●".repeat(Math.max(0, token.length - 12)) + token.slice(-4);
+  return `${parts[0]}:${parts[1].substring(0, 4)}${"●".repeat(Math.max(0, parts[1].length - 8))}${parts[1].slice(-4)}`;
+}
+
+function toggleTokenVis(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  if (!inp) return;
+  const show = inp.type === "password";
+  inp.type = show ? "text" : "password";
+  btn.querySelector("i").className = show ? "fas fa-eye-slash" : "fas fa-eye";
+}
+
+function openBotModal(id) {
+  editingBotId = id || null;
+  const bot = id ? _botsData.find(b => b.id === id) : null;
+  document.getElementById("bot-modal-title").textContent = bot ? "Editar Bot" : "Adicionar Bot";
+  document.getElementById("bot-f-name").value  = bot ? bot.name  : "";
+  document.getElementById("bot-f-token").value = bot ? bot.token : "";
+  document.getElementById("bot-f-token").type  = "password";
+  document.getElementById("bot-verify-result").style.display = "none";
+  bootstrap.Modal.getOrCreateInstance(document.getElementById("botModal")).show();
+}
+
+async function verifyModalToken() {
+  const token  = document.getElementById("bot-f-token").value.trim();
+  const result = document.getElementById("bot-verify-result");
+  result.style.display = "";
+  result.innerHTML = `<span style="color:var(--text-muted);font-size:.85rem;"><i class="fas fa-circle-notch fa-spin me-2"></i>Verificando...</span>`;
+  result.style.background = "rgba(255,255,255,.04)";
+  result.style.border = "1px solid var(--border)";
+
+  const r    = await fetch("/api/bots/check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  const data = await r.json();
+
+  if (data.online) {
+    result.style.background = "rgba(16,185,129,.1)";
+    result.style.border = "1px solid rgba(16,185,129,.3)";
+    result.innerHTML = `
+      <div style="color:#34d399;font-size:.85rem;font-weight:600;margin-bottom:4px;">
+        <i class="fas fa-check-circle me-2"></i>Token válido!
+      </div>
+      <div style="color:rgba(255,255,255,.6);font-size:.82rem;">
+        <b>${esc(data.name)}</b> · @${esc(data.username)} · ID: ${data.id}
+      </div>`;
+  } else {
+    result.style.background = "rgba(239,68,68,.08)";
+    result.style.border = "1px solid rgba(239,68,68,.25)";
+    result.innerHTML = `
+      <div style="color:#f87171;font-size:.85rem;font-weight:600;margin-bottom:4px;">
+        <i class="fas fa-times-circle me-2"></i>Token inválido
+      </div>
+      <div style="color:rgba(255,255,255,.5);font-size:.82rem;">${esc(data.reason || "Não foi possível conectar")}</div>`;
+  }
+}
+
+async function saveBotModal() {
+  const name  = document.getElementById("bot-f-name").value.trim();
+  const token = document.getElementById("bot-f-token").value.trim();
+  if (!token) { toast("Informe o token", "danger"); return; }
+  if (!name)  { toast("Informe um nome", "danger"); return; }
+
+  const url    = editingBotId ? `/api/bots/${editingBotId}` : "/api/bots";
+  const method = editingBotId ? "PUT" : "POST";
+  const r = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, token }),
+  });
+  if (r.ok) {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("botModal")).hide();
+    toast(editingBotId ? "Bot atualizado!" : "Bot adicionado!", "success");
+    renderBots();
+  } else {
+    toast("Erro ao salvar", "danger");
+  }
+}
+
+async function activateBot(id) {
+  const r = await fetch(`/api/bots/${id}/activate`, { method: "POST" });
+  if (r.ok) {
+    toast("Conectando bot...", "info");
+    // Aguarda o bot inicializar e atualiza status + cards
+    setTimeout(async () => {
+      await renderBots();
+      checkStatus();
+    }, 3000);
+  } else {
+    const d = await r.json().catch(() => ({}));
+    toast(d.error || "Erro ao ativar bot", "danger");
+  }
+}
+
+async function reverifyBot(id) {
+  const card = document.getElementById(`botcard-${id}`);
+  if (card) {
+    const badge = card.querySelector(".bot-status-badge");
+    if (badge) { badge.className = "bot-status-badge checking"; badge.innerHTML = `<i class="fas fa-circle-notch fa-spin" style="font-size:.7rem;"></i>Verificando...`; }
+  }
+  await renderBots();
+}
+
+async function deleteBot(id) {
+  if (!confirm("Excluir esta instância de bot?")) return;
+  const r = await fetch(`/api/bots/${id}`, { method: "DELETE" });
+  if (r.ok) { toast("Bot removido", "success"); renderBots(); }
+  else       { toast("Erro ao remover", "danger"); }
+}
+
+// ─── Start ────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

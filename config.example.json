@@ -1,0 +1,44 @@
+{
+  "bot_token": "SEU_TOKEN_AQUI",
+  "timezone": "America/Sao_Paulo",
+  "web_port": 5000,
+  "bots": [
+    {
+      "id": "bot1",
+      "name": "Bot Principal",
+      "token": "SEU_TOKEN_AQUI",
+      "active": true
+    }
+  ],
+  "groups": {
+    "group1": {
+      "id": "-1001234567890",
+      "name": "Grupo VIP",
+      "default_buttons": ["broker", "tutorial", "course"]
+    },
+    "group2": {
+      "id": "-1001234567891",
+      "name": "Grupo Premium",
+      "default_buttons": ["broker", "tutorial"]
+    },
+    "group3": {
+      "id": "-1001234567892",
+      "name": "Grupo Free",
+      "default_buttons": ["broker", "tutorial"]
+    }
+  },
+  "button_configs": {
+    "broker": {
+      "label": "🏦 Corretora",
+      "url": "https://corretora.com/link"
+    },
+    "tutorial": {
+      "label": "📚 Tutorial",
+      "url": "https://tutorial.com/link"
+    },
+    "course": {
+      "label": "🎓 Curso",
+      "url": "https://curso.com/link"
+    }
+  }
+}

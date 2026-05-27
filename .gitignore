@@ -1,0 +1,23 @@
+# Configuração real (contém token — nunca commitar)
+config.json
+
+# Logs
+bot.log
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
