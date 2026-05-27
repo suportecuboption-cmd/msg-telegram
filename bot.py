@@ -79,6 +79,7 @@ async def send_scheduled_message(
         logger.info("Mensagem '%s' enviada para %s", message_name, chat_id)
     except Exception as exc:
         logger.error("Erro ao enviar '%s' para %s: %s", message_name, chat_id, exc)
+        raise
 
 
 def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None:
