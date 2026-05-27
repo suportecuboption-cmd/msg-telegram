@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY bot.py web.py main.py ./
+COPY bot.py web.py main.py db.py ./
 COPY templates/ templates/
 COPY config.example.json ./
 COPY messages.json ./messages.default.json
