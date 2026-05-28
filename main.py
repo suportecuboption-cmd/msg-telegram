@@ -85,7 +85,8 @@ class BotManager:
         async with self._lock:
             await self._stop_internal()
 
-            if not token or token == "SEU_TOKEN_AQUI":
+            _placeholders = {"SEU_TOKEN_AQUI", "SEU_TOKEN_DO_BOT_AQUI", "YOUR_TOKEN_HERE"}
+            if not token or token in _placeholders or ":" not in token:
                 logger.warning("Token não configurado — bot permanece offline.")
                 return
 
@@ -102,9 +103,14 @@ class BotManager:
             bot_module.setup_handlers(app)
             scheduler.start()
 
-            await app.initialize()
-            await app.start()
-            await app.updater.start_polling(drop_pending_updates=True)
+            try:
+                await app.initialize()
+                await app.start()
+                await app.updater.start_polling(drop_pending_updates=True)
+            except Exception as exc:
+                logger.error("Falha ao iniciar bot (token inválido?): %s", exc)
+                scheduler.shutdown(wait=False)
+                return
 
             self._app = app
             self._scheduler = scheduler
