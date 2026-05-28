@@ -7,17 +7,22 @@ Camada de acesso a dados.
 import json
 import logging
 import os
+import secrets
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+
+from werkzeug.security import check_password_hash, generate_password_hash
 
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 _DATA = Path(os.getenv("DATA_DIR", "."))
-_CONFIG_FILE    = _DATA / "config.json"
-_MESSAGES_FILE  = _DATA / "messages.json"
-_EMOJI_MAP_FILE = _DATA / "emoji_map.json"
+_CONFIG_FILE     = _DATA / "config.json"
+_MESSAGES_FILE   = _DATA / "messages.json"
+_EMOJI_MAP_FILE  = _DATA / "emoji_map.json"
+_USERS_FILE      = _DATA / "users.json"
+_SECRET_KEY_FILE = _DATA / ".secret_key"
 
 _pool = None
 
@@ -57,7 +62,8 @@ def init_db() -> None:
     if not use_postgres():
         return
     with _conn() as c:
-        c.cursor().execute("""
+        cur = c.cursor()
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS settings (
                 key   TEXT PRIMARY KEY,
                 value TEXT
@@ -100,6 +106,13 @@ def init_db() -> None:
                 emoji_char      TEXT PRIMARY KEY,
                 custom_emoji_id TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS users (
+                id       TEXT PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                role     TEXT NOT NULL DEFAULT 'user',
+                active   BOOLEAN NOT NULL DEFAULT TRUE
+            );
         """)
         # Migrations: add columns that may not exist in older deployments
         cur.execute(
@@ -133,6 +146,39 @@ def migrate_from_json() -> None:
         logger.warning("Falha ao migrar mensagens: %s", exc)
 
 
+# ── Secret Key ────────────────────────────────────────────────────────────────
+
+def get_or_create_secret_key() -> str:
+    """Retorna a chave secreta do Flask, gerando e persistindo se necessário."""
+    env_key = os.getenv("SECRET_KEY")
+    if env_key:
+        return env_key
+
+    if not use_postgres():
+        if _SECRET_KEY_FILE.exists():
+            return _SECRET_KEY_FILE.read_text().strip()
+        key = secrets.token_hex(32)
+        _SECRET_KEY_FILE.write_text(key)
+        return key
+
+    # PostgreSQL: ler ou gerar na tabela settings
+    with _conn() as c:
+        cur = c.cursor()
+        cur.execute("SELECT value FROM settings WHERE key='secret_key'")
+        row = cur.fetchone()
+        if row:
+            return row[0]
+
+    key = secrets.token_hex(32)
+    with _conn() as c:
+        c.cursor().execute(
+            "INSERT INTO settings(key,value) VALUES('secret_key',%s) "
+            "ON CONFLICT(key) DO NOTHING",
+            (key,),
+        )
+    return key
+
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 def load_config() -> dict:
@@ -144,7 +190,7 @@ def load_config() -> dict:
 
     with _conn() as c:
         cur = c.cursor()
-        cur.execute("SELECT key, value FROM settings")
+        cur.execute("SELECT key, value FROM settings WHERE key != 'secret_key'")
         settings = dict(cur.fetchall())
 
         cur.execute("SELECT id, name, token, active FROM bots ORDER BY name")
@@ -157,11 +203,11 @@ def load_config() -> dict:
         button_configs = {r[0]: {"label": r[1], "url": r[2]} for r in cur.fetchall()}
 
     cfg = {
-        "bot_token":    settings.get("bot_token", "SEU_TOKEN_AQUI"),
-        "timezone":     settings.get("timezone", "America/Sao_Paulo"),
-        "web_port":     int(settings.get("web_port", "5000")),
-        "bots":         bots,
-        "groups":       groups,
+        "bot_token":      settings.get("bot_token", "SEU_TOKEN_AQUI"),
+        "timezone":       settings.get("timezone", "America/Sao_Paulo"),
+        "web_port":       int(settings.get("web_port", "5000")),
+        "bots":           bots,
+        "groups":         groups,
         "button_configs": button_configs,
     }
     _apply_env(cfg)
@@ -261,7 +307,7 @@ def save_messages(data: dict) -> None:
 
 
 def upsert_message(msg: dict) -> dict:
-    """Cria ou atualiza uma mensagem individual (mais eficiente que save_messages)."""
+    """Cria ou atualiza uma mensagem individual."""
     if not use_postgres():
         data = load_messages()
         idx = next((i for i, m in enumerate(data["messages"]) if m["id"] == msg["id"]), None)
@@ -308,7 +354,7 @@ def delete_message(message_id: str) -> None:
 # ── Emoji Map ─────────────────────────────────────────────────────────────────
 
 def load_emoji_map() -> dict:
-    """Retorna {emoji_char: custom_emoji_id} com os emojis animados registrados."""
+    """Retorna {emoji_char: custom_emoji_id}."""
     if not use_postgres():
         if not _EMOJI_MAP_FILE.exists():
             return {}
@@ -350,6 +396,161 @@ def delete_emoji(emoji_char: str) -> None:
         return
     with _conn() as c:
         c.cursor().execute("DELETE FROM emoji_map WHERE emoji_char=%s", (emoji_char,))
+
+
+# ── Users ─────────────────────────────────────────────────────────────────────
+
+def _load_users_raw() -> list:
+    """JSON mode: carrega lista completa de usuários (inclui hash de senha)."""
+    if not _USERS_FILE.exists():
+        return []
+    try:
+        return json.loads(_USERS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _save_users_raw(users: list) -> None:
+    _USERS_FILE.write_text(
+        json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def load_users() -> list:
+    """Retorna todos os usuários sem o hash de senha."""
+    if not use_postgres():
+        return [
+            {k: v for k, v in u.items() if k != "password"}
+            for u in _load_users_raw()
+        ]
+    with _conn() as c:
+        cur = c.cursor()
+        cur.execute("SELECT id, username, role, active FROM users ORDER BY username")
+        return [{"id": r[0], "username": r[1], "role": r[2], "active": r[3]}
+                for r in cur.fetchall()]
+
+
+def get_user_by_id(user_id: str) -> dict | None:
+    """Retorna usuário pelo ID sem senha."""
+    if not use_postgres():
+        for u in _load_users_raw():
+            if u["id"] == user_id:
+                return {k: v for k, v in u.items() if k != "password"}
+        return None
+    with _conn() as c:
+        cur = c.cursor()
+        cur.execute("SELECT id, username, role, active FROM users WHERE id=%s", (user_id,))
+        row = cur.fetchone()
+        if row:
+            return {"id": row[0], "username": row[1], "role": row[2], "active": row[3]}
+    return None
+
+
+def _get_user_with_password(username: str) -> dict | None:
+    """Uso interno (autenticação): retorna usuário com hash de senha."""
+    if not use_postgres():
+        for u in _load_users_raw():
+            if u["username"].lower() == username.lower():
+                return u
+        return None
+    with _conn() as c:
+        cur = c.cursor()
+        cur.execute(
+            "SELECT id, username, password, role, active FROM users WHERE username=%s",
+            (username,),
+        )
+        row = cur.fetchone()
+        if row:
+            return {"id": row[0], "username": row[1], "password": row[2],
+                    "role": row[3], "active": row[4]}
+    return None
+
+
+def verify_user(username: str, password: str) -> dict | None:
+    """Verifica credenciais e retorna usuário sem senha, ou None se inválido."""
+    user = _get_user_with_password(username)
+    if not user or not user.get("active"):
+        return None
+    if not check_password_hash(user["password"], password):
+        return None
+    return {k: v for k, v in user.items() if k != "password"}
+
+
+def create_user(username: str, password: str, role: str = "user") -> dict:
+    """Cria um novo usuário. Retorna o usuário criado (sem senha)."""
+    user_id = uuid.uuid4().hex[:8]
+    pw_hash = generate_password_hash(password)
+
+    if not use_postgres():
+        users = _load_users_raw()
+        new = {"id": user_id, "username": username, "password": pw_hash,
+               "role": role, "active": True}
+        users.append(new)
+        _save_users_raw(users)
+        return {k: v for k, v in new.items() if k != "password"}
+
+    with _conn() as c:
+        c.cursor().execute(
+            "INSERT INTO users(id,username,password,role,active) VALUES(%s,%s,%s,%s,%s)",
+            (user_id, username, pw_hash, role, True),
+        )
+    return {"id": user_id, "username": username, "role": role, "active": True}
+
+
+def update_user(user_id: str, data: dict) -> bool:
+    """Atualiza role, active e/ou senha de um usuário."""
+    if not use_postgres():
+        users = _load_users_raw()
+        for i, u in enumerate(users):
+            if u["id"] == user_id:
+                if data.get("password"):
+                    users[i]["password"] = generate_password_hash(data["password"])
+                if "role" in data:
+                    users[i]["role"] = data["role"]
+                if "active" in data:
+                    users[i]["active"] = bool(data["active"])
+                _save_users_raw(users)
+                return True
+        return False
+
+    with _conn() as c:
+        cur = c.cursor()
+        if data.get("password"):
+            cur.execute("UPDATE users SET password=%s WHERE id=%s",
+                        (generate_password_hash(data["password"]), user_id))
+        if "role" in data:
+            cur.execute("UPDATE users SET role=%s WHERE id=%s", (data["role"], user_id))
+        if "active" in data:
+            cur.execute("UPDATE users SET active=%s WHERE id=%s",
+                        (bool(data["active"]), user_id))
+    return True
+
+
+def delete_user(user_id: str) -> bool:
+    """Remove um usuário. Retorna False se não encontrado."""
+    if not use_postgres():
+        users = _load_users_raw()
+        new = [u for u in users if u["id"] != user_id]
+        if len(new) == len(users):
+            return False
+        _save_users_raw(new)
+        return True
+    with _conn() as c:
+        cur = c.cursor()
+        cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+        return cur.rowcount > 0
+
+
+def create_default_admin() -> None:
+    """Cria o usuário admin padrão se não houver nenhum usuário cadastrado."""
+    if load_users():
+        return
+    password = os.getenv("ADMIN_PASSWORD", "admin123")
+    create_user("admin", password, role="admin")
+    logger.info(
+        "Usuário admin padrão criado — username: admin | "
+        "defina ADMIN_PASSWORD no ambiente para personalizar a senha inicial"
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

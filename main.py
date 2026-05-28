@@ -38,6 +38,7 @@ def _init_data_dir() -> None:
     _DATA.mkdir(parents=True, exist_ok=True)
 
     import db as db_module
+    db_module.create_default_admin()
     if not db_module.use_postgres():
         if not _CONFIG_FILE.exists():
             src = Path("config.example.json")

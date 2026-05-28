@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — Bot Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d0f1a;
+      --card: #13162a;
+      --border: rgba(255,255,255,0.07);
+      --accent: #7c3aed;
+      --accent2: #9f67ff;
+      --danger: #ef4444;
+      --text-muted: rgba(255,255,255,0.45);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      background: var(--bg);
+      color: #e2e8f0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .login-wrap {
+      width: 100%;
+      max-width: 420px;
+    }
+
+    /* Logo */
+    .login-logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .logo-icon {
+      width: 56px; height: 56px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, var(--accent), #4f46e5);
+      display: inline-flex; align-items: center; justify-content: center;
+      margin-bottom: 14px;
+    }
+    .logo-icon i { color: white; font-size: 1.5rem; }
+    .login-logo h1 { font-size: 1.5rem; font-weight: 700; color: white; margin: 0 0 4px; }
+    .login-logo p  { font-size: .875rem; color: var(--text-muted); margin: 0; }
+
+    /* Card */
+    .login-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+    }
+
+    /* Form */
+    .form-label { font-size: .82rem; color: rgba(255,255,255,.7); margin-bottom: 5px; }
+    .form-control {
+      background: rgba(255,255,255,.05);
+      border: 1px solid var(--border);
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: .9rem;
+    }
+    .form-control:focus {
+      background: rgba(255,255,255,.08);
+      border-color: var(--accent);
+      color: white;
+      box-shadow: 0 0 0 3px rgba(124,58,237,.2);
+    }
+    .form-control::placeholder { color: rgba(255,255,255,.2); }
+
+    .input-group .form-control { border-radius: 8px 0 0 8px; }
+    .input-group .btn { border-radius: 0 8px 8px 0; border-color: var(--border); background: rgba(255,255,255,.05); color: rgba(255,255,255,.5); }
+    .input-group .btn:hover { background: rgba(255,255,255,.1); color: white; }
+
+    /* Buttons */
+    .btn-login {
+      background: var(--accent);
+      border: none;
+      color: white;
+      font-weight: 600;
+      font-size: 1rem;
+      padding: 11px;
+      border-radius: 8px;
+      width: 100%;
+      transition: background .15s;
+    }
+    .btn-login:hover:not(:disabled) { background: #6d28d9; }
+    .btn-login:disabled { opacity: .65; }
+
+    /* Error */
+    .login-error {
+      background: rgba(239,68,68,.12);
+      border: 1px solid rgba(239,68,68,.3);
+      color: #fca5a5;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: .875rem;
+      margin-bottom: 16px;
+    }
+
+    /* Footer */
+    .login-footer {
+      text-align: center;
+      margin-top: 20px;
+      font-size: .75rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="login-logo">
+    <div class="logo-icon"><i class="fab fa-telegram"></i></div>
+    <h1>Bot Manager</h1>
+    <p>Faça login para acessar o painel</p>
+  </div>
+
+  <div class="login-card">
+    <div id="login-error" class="login-error" style="display:none;"></div>
+
+    <form onsubmit="doLogin(event)" autocomplete="on">
+      <div class="mb-3">
+        <label class="form-label" for="l-username">Usuário</label>
+        <input type="text" class="form-control" id="l-username"
+               placeholder="admin" autocomplete="username" required>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label" for="l-password">Senha</label>
+        <div class="input-group">
+          <input type="password" class="form-control" id="l-password"
+                 placeholder="••••••••" autocomplete="current-password" required>
+          <button type="button" class="btn" onclick="togglePass()" tabindex="-1" id="toggle-pass-btn">
+            <i class="fas fa-eye" id="toggle-pass-icon"></i>
+          </button>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-login" id="l-btn">
+        <i class="fas fa-sign-in-alt me-2"></i>Entrar
+      </button>
+    </form>
+  </div>
+
+  <div class="login-footer">
+    Telegram Bot Manager &nbsp;·&nbsp; Acesso restrito
+  </div>
+</div>
+
+<script>
+function togglePass() {
+  const inp  = document.getElementById("l-password");
+  const icon = document.getElementById("toggle-pass-icon");
+  if (inp.type === "password") {
+    inp.type  = "text";
+    icon.className = "fas fa-eye-slash";
+  } else {
+    inp.type  = "password";
+    icon.className = "fas fa-eye";
+  }
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  const username = document.getElementById("l-username").value.trim();
+  const password = document.getElementById("l-password").value;
+  const btn      = document.getElementById("l-btn");
+  const errDiv   = document.getElementById("login-error");
+
+  errDiv.style.display = "none";
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-circle-notch fa-spin me-2"></i>Entrando...';
+
+  try {
+    const r = await fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    if (r.ok) {
+      window.location.href = "/";
+    } else {
+      const data = await r.json().catch(() => ({}));
+      errDiv.textContent   = data.error || "Erro ao fazer login";
+      errDiv.style.display = "block";
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i>Entrar';
+      document.getElementById("l-password").focus();
+    }
+  } catch {
+    errDiv.textContent   = "Erro de conexão com o servidor";
+    errDiv.style.display = "block";
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i>Entrar';
+  }
+}
+</script>
+</body>
+</html>

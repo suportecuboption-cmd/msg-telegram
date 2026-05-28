@@ -1,12 +1,15 @@
 import asyncio
+import functools
 import json
 import logging
+import os
 import urllib.error
 import urllib.request
 import uuid
 from typing import Optional, Callable
 
-from flask import Flask, jsonify, request, render_template
+from flask import (Flask, jsonify, redirect, render_template,
+                   request, session, url_for)
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +19,9 @@ _manager = None
 _loop: Optional[asyncio.AbstractEventLoop] = None
 _reload_callback: Optional[Callable] = None
 _restart_callback: Optional[Callable] = None
+
+# Quando NO_AUTH=1/true o login é desativado (útil para dev local)
+NO_AUTH = os.getenv("NO_AUTH", "").lower() in ("1", "true", "yes")
 
 
 def set_context(manager, loop: asyncio.AbstractEventLoop,
@@ -27,7 +33,7 @@ def set_context(manager, loop: asyncio.AbstractEventLoop,
     _restart_callback = restart_callback
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Helpers internos ──────────────────────────────────────────────────────────
 
 def _load_config() -> dict:
     return _db.load_config()
@@ -49,7 +55,6 @@ def _ensure_schedule_ids(schedules: list) -> list:
 
 
 def _check_token(token: str) -> dict:
-    """Valida um token chamando a API do Telegram diretamente."""
     if not token or token == "SEU_TOKEN_AQUI":
         return {"online": False, "reason": "Token não configurado"}
     try:
@@ -58,12 +63,8 @@ def _check_token(token: str) -> dict:
             data = json.loads(resp.read())
         if data.get("ok"):
             r = data["result"]
-            return {
-                "online": True,
-                "name": r.get("first_name", ""),
-                "username": r.get("username", ""),
-                "id": r.get("id"),
-            }
+            return {"online": True, "name": r.get("first_name", ""),
+                    "username": r.get("username", ""), "id": r.get("id")}
         return {"online": False, "reason": data.get("description", "Erro")}
     except urllib.error.HTTPError as exc:
         try:
@@ -75,14 +76,152 @@ def _check_token(token: str) -> dict:
         return {"online": False, "reason": str(exc)}
 
 
+# ── Decoradores de autenticação ───────────────────────────────────────────────
+
+def _current_user_id():
+    return session.get("user_id") if not NO_AUTH else "noauth"
+
+def _current_role():
+    return session.get("role", "admin") if not NO_AUTH else "admin"
+
+def login_required(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if NO_AUTH:
+            return f(*args, **kwargs)
+        if not session.get("user_id"):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Não autenticado"}), 401
+            return redirect("/login")
+        return f(*args, **kwargs)
+    return decorated
+
+def admin_required(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if NO_AUTH:
+            return f(*args, **kwargs)
+        if not session.get("user_id"):
+            return jsonify({"error": "Não autenticado"}), 401
+        if session.get("role") != "admin":
+            return jsonify({"error": "Acesso restrito a administradores"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
 # ── App factory ───────────────────────────────────────────────────────────────
 
 def create_app() -> Flask:
     app = Flask(__name__, template_folder="templates")
+    app.secret_key = _db.get_or_create_secret_key()
+
+    # Garante que o admin padrão exista
+    _db.create_default_admin()
+
+    # Middleware: protege todas as rotas exceto auth e static
+    @app.before_request
+    def require_login():
+        if NO_AUTH:
+            return None
+        exempt = {"/login", "/auth/login", "/auth/logout"}
+        if request.path in exempt or request.path.startswith("/static/"):
+            return None
+        if not session.get("user_id"):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Não autenticado"}), 401
+            return redirect("/login")
+        return None
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+
+    @app.route("/login")
+    def login_page():
+        if NO_AUTH or session.get("user_id"):
+            return redirect("/")
+        return render_template("login.html")
+
+    @app.route("/auth/login", methods=["POST"])
+    def auth_login():
+        data = request.get_json(force=True) or {}
+        username = data.get("username", "").strip()
+        password = data.get("password", "")
+        user = _db.verify_user(username, password)
+        if not user:
+            return jsonify({"error": "Usuário ou senha incorretos"}), 401
+        session.permanent = True
+        session["user_id"]  = user["id"]
+        session["username"] = user["username"]
+        session["role"]     = user["role"]
+        return jsonify({"success": True, "role": user["role"]})
+
+    @app.route("/auth/logout")
+    def auth_logout():
+        session.clear()
+        return redirect("/login")
+
+    @app.route("/auth/me")
+    def auth_me():
+        if NO_AUTH:
+            return jsonify({"id": "noauth", "username": "dev", "role": "admin"})
+        if not session.get("user_id"):
+            return jsonify({"error": "Não autenticado"}), 401
+        return jsonify({
+            "id":       session["user_id"],
+            "username": session["username"],
+            "role":     session["role"],
+        })
+
+    # ── Users (admin only) ────────────────────────────────────────────────────
+
+    @app.route("/api/users", methods=["GET"])
+    @admin_required
+    def list_users():
+        return jsonify(_db.load_users())
+
+    @app.route("/api/users", methods=["POST"])
+    @admin_required
+    def create_user_route():
+        data = request.get_json(force=True) or {}
+        username = data.get("username", "").strip()
+        password = data.get("password", "").strip()
+        role     = data.get("role", "user")
+        if not username or not password:
+            return jsonify({"error": "username e password obrigatórios"}), 400
+        if role not in ("admin", "user"):
+            return jsonify({"error": "role deve ser 'admin' ou 'user'"}), 400
+        try:
+            user = _db.create_user(username, password, role)
+        except Exception as exc:
+            return jsonify({"error": f"Erro ao criar usuário: {exc}"}), 400
+        return jsonify(user), 201
+
+    @app.route("/api/users/<user_id>", methods=["PUT"])
+    @admin_required
+    def update_user_route(user_id):
+        data = request.get_json(force=True) or {}
+        # Impede o admin de se auto-desativar ou de tirar seu próprio role
+        if user_id == session.get("user_id") and not NO_AUTH:
+            data.pop("active", None)
+            data.pop("role", None)
+        ok = _db.update_user(user_id, data)
+        if not ok:
+            return jsonify({"error": "Usuário não encontrado"}), 404
+        return jsonify(_db.get_user_by_id(user_id) or {})
+
+    @app.route("/api/users/<user_id>", methods=["DELETE"])
+    @admin_required
+    def delete_user_route(user_id):
+        if user_id == session.get("user_id") and not NO_AUTH:
+            return jsonify({"error": "Você não pode excluir sua própria conta"}), 400
+        ok = _db.delete_user(user_id)
+        if not ok:
+            return jsonify({"error": "Usuário não encontrado"}), 404
+        return jsonify({"success": True})
 
     # ── Bot instances ─────────────────────────────────────────────────────────
 
     @app.route("/api/bots", methods=["GET"])
+    @login_required
     def list_bots():
         cfg = _load_config()
         result = []
@@ -92,20 +231,22 @@ def create_app() -> Flask:
         return jsonify(result)
 
     @app.route("/api/bots/check", methods=["POST"])
+    @login_required
     def check_bot():
         token = (request.get_json(force=True) or {}).get("token", "")
         return jsonify(_check_token(token))
 
     @app.route("/api/bots", methods=["POST"])
+    @login_required
     def add_bot():
         data = request.get_json(force=True)
-        cfg = _load_config()
+        cfg  = _load_config()
         if "bots" not in cfg:
             cfg["bots"] = []
         new_bot = {
-            "id": uuid.uuid4().hex[:8],
-            "name": data.get("name", "Novo Bot"),
-            "token": data.get("token", ""),
+            "id":     uuid.uuid4().hex[:8],
+            "name":   data.get("name", "Novo Bot"),
+            "token":  data.get("token", ""),
             "active": False,
         }
         cfg["bots"].append(new_bot)
@@ -113,14 +254,14 @@ def create_app() -> Flask:
         return jsonify(new_bot), 201
 
     @app.route("/api/bots/<bot_id>", methods=["PUT"])
+    @login_required
     def update_bot(bot_id):
         data = request.get_json(force=True)
-        cfg = _load_config()
+        cfg  = _load_config()
         for i, b in enumerate(cfg.get("bots", [])):
             if b["id"] == bot_id:
                 cfg["bots"][i]["name"]  = data.get("name",  b["name"])
                 cfg["bots"][i]["token"] = data.get("token", b["token"])
-                # Se for o bot ativo, atualiza bot_token e reinicia
                 if b.get("active"):
                     cfg["bot_token"] = cfg["bots"][i]["token"]
                     _save_config(cfg)
@@ -132,8 +273,9 @@ def create_app() -> Flask:
         return jsonify({"error": "Bot não encontrado"}), 404
 
     @app.route("/api/bots/<bot_id>/activate", methods=["POST"])
+    @login_required
     def activate_bot(bot_id):
-        cfg = _load_config()
+        cfg       = _load_config()
         activated = None
         for b in cfg.get("bots", []):
             b["active"] = b["id"] == bot_id
@@ -148,8 +290,9 @@ def create_app() -> Flask:
         return jsonify({"success": True})
 
     @app.route("/api/bots/<bot_id>", methods=["DELETE"])
+    @login_required
     def delete_bot(bot_id):
-        cfg = _load_config()
+        cfg    = _load_config()
         before = len(cfg.get("bots", []))
         cfg["bots"] = [b for b in cfg.get("bots", []) if b["id"] != bot_id]
         if len(cfg["bots"]) == before:
@@ -160,27 +303,20 @@ def create_app() -> Flask:
     # ── Status ────────────────────────────────────────────────────────────────
 
     @app.route("/api/status", methods=["GET"])
+    @login_required
     def get_status():
-        # Caminho 1: bot rodando via main.py — usa a conexão ativa
         bot = _manager.bot if _manager else None
         if bot and _loop:
             try:
                 future = asyncio.run_coroutine_threadsafe(bot.get_me(), _loop)
-                info = future.result(timeout=5)
-                return jsonify({
-                    "online": True,
-                    "name": info.full_name,
-                    "username": info.username,
-                    "id": info.id,
-                })
+                info   = future.result(timeout=5)
+                return jsonify({"online": True, "name": info.full_name,
+                                "username": info.username, "id": info.id})
             except Exception:
-                pass  # cai para verificação direta abaixo
-
-        # Caminho 2: sem BotManager ativo — verifica o token do config diretamente
+                pass
         try:
             cfg = _load_config()
             active_token = cfg.get("bot_token", "")
-            # Tenta também pelo bot marcado como active na lista
             for b in cfg.get("bots", []):
                 if b.get("active"):
                     active_token = b.get("token", active_token)
@@ -192,14 +328,16 @@ def create_app() -> Flask:
     # ── Config ────────────────────────────────────────────────────────────────
 
     @app.route("/api/config", methods=["GET"])
+    @login_required
     def get_config():
         cfg = _load_config()
         return jsonify({k: v for k, v in cfg.items() if k != "bot_token"})
 
     @app.route("/api/config", methods=["PUT"])
+    @login_required
     def update_config():
         data = request.get_json(force=True)
-        cfg = _load_config()
+        cfg  = _load_config()
         for key in ("groups", "button_configs", "timezone", "web_port"):
             if key in data:
                 cfg[key] = data[key]
@@ -211,20 +349,22 @@ def create_app() -> Flask:
     # ── Messages ──────────────────────────────────────────────────────────────
 
     @app.route("/api/messages", methods=["GET"])
+    @login_required
     def get_messages():
         return jsonify(_load_messages())
 
     @app.route("/api/messages", methods=["POST"])
+    @login_required
     def create_message():
         data = request.get_json(force=True)
         message = {
-            "id": uuid.uuid4().hex[:8],
-            "name": data.get("name", "Nova Mensagem"),
-            "text": data.get("text", ""),
-            "image": data.get("image") or None,
-            "active": data.get("active", True),
+            "id":         uuid.uuid4().hex[:8],
+            "name":       data.get("name", "Nova Mensagem"),
+            "text":       data.get("text", ""),
+            "image":      data.get("image") or None,
+            "active":     data.get("active", True),
             "parse_mode": data.get("parse_mode", "HTML"),
-            "schedules": _ensure_schedule_ids(data.get("schedules", [])),
+            "schedules":  _ensure_schedule_ids(data.get("schedules", [])),
         }
         _db.upsert_message(message)
         if _reload_callback:
@@ -232,6 +372,7 @@ def create_app() -> Flask:
         return jsonify(message), 201
 
     @app.route("/api/messages/<message_id>", methods=["PUT"])
+    @login_required
     def update_message(message_id):
         data = request.get_json(force=True)
         data["id"] = message_id
@@ -243,6 +384,7 @@ def create_app() -> Flask:
         return jsonify(data)
 
     @app.route("/api/messages/<message_id>", methods=["DELETE"])
+    @login_required
     def delete_message_route(message_id):
         _db.delete_message(message_id)
         if _reload_callback:
@@ -252,20 +394,21 @@ def create_app() -> Flask:
     # ── Send Now ──────────────────────────────────────────────────────────────
 
     @app.route("/api/messages/<message_id>/send-now", methods=["POST"])
+    @login_required
     def send_now(message_id):
         bot = _manager.bot if _manager else None
         if not bot or not _loop:
             return jsonify({"error": "Bot não disponível — configure e ative um token"}), 503
 
-        data = request.get_json(force=True) or {}
-        cfg = _load_config()
+        data  = request.get_json(force=True) or {}
+        cfg   = _load_config()
         store = _load_messages()
 
         message = next((m for m in store["messages"] if m["id"] == message_id), None)
         if not message:
             return jsonify({"error": "Mensagem não encontrada"}), 404
 
-        group_key = data.get("group")
+        group_key      = data.get("group")
         groups_to_send = [group_key] if group_key else list(cfg["groups"].keys())
 
         from bot import send_scheduled_message
@@ -300,13 +443,15 @@ def create_app() -> Flask:
     # ── Emoji Map ─────────────────────────────────────────────────────────────
 
     @app.route("/api/emoji", methods=["GET"])
+    @login_required
     def get_emoji_map():
         data = _db.load_emoji_map()
         return jsonify([{"char": k, "id": v} for k, v in sorted(data.items())])
 
     @app.route("/api/emoji", methods=["POST"])
+    @login_required
     def add_emoji():
-        body = request.get_json(force=True) or {}
+        body     = request.get_json(force=True) or {}
         char     = body.get("char", "").strip()
         emoji_id = body.get("id", "").strip()
         if not char or not emoji_id:
@@ -315,6 +460,7 @@ def create_app() -> Flask:
         return jsonify({"char": char, "id": emoji_id}), 201
 
     @app.route("/api/emoji", methods=["DELETE"])
+    @login_required
     def del_emoji():
         body = request.get_json(force=True) or {}
         char = body.get("char", "")

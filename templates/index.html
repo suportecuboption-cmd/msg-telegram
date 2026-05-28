@@ -230,11 +230,17 @@
     <a class="nav-item active" onclick="showPage('messages',this)">
       <i class="fas fa-calendar-alt"></i> Mensagens
     </a>
+    <a class="nav-item" onclick="showPage('emojis',this)">
+      <i class="fas fa-fire"></i> Emojis
+    </a>
     <a class="nav-item" onclick="showPage('bot',this)">
       <i class="fab fa-telegram"></i> Bot
     </a>
     <a class="nav-item" onclick="showPage('config',this)">
       <i class="fas fa-sliders"></i> Configurações
+    </a>
+    <a class="nav-item" id="nav-admin" style="display:none;" onclick="showPage('admin',this)">
+      <i class="fas fa-shield-halved"></i> Admin
     </a>
   </div>
   <div class="sidebar-footer">
@@ -244,6 +250,16 @@
         <div id="bot-status" style="color:rgba(255,255,255,.5);font-size:.8rem;">Verificando...</div>
         <div id="bot-name" style="color:rgba(255,255,255,.3);font-size:.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:155px;"></div>
       </div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+      <div style="font-size:.8rem;color:rgba(255,255,255,.5);display:flex;align-items:center;gap:6px;min-width:0;">
+        <i class="fas fa-user" style="opacity:.6;flex-shrink:0;"></i>
+        <span id="sidebar-username" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">...</span>
+        <span id="sidebar-role-badge" style="font-size:.65rem;padding:1px 6px;border-radius:10px;background:rgba(124,58,237,.3);color:#c4b5fd;border:1px solid rgba(124,58,237,.4);flex-shrink:0;"></span>
+      </div>
+      <a href="/auth/logout" title="Sair" style="color:var(--text-muted);font-size:.85rem;flex-shrink:0;margin-left:8px;" onclick="return confirmLogout()">
+        <i class="fas fa-right-from-bracket"></i>
+      </a>
     </div>
   </div>
 </aside>
@@ -313,40 +329,137 @@
       <div id="buttons-list"></div>
     </div>
 
-    <!-- Animated Emoji -->
-    <div class="card-box">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <div class="section-label mb-0"><i class="fas fa-fire me-1" style="color:#f97316;"></i>Emojis Animados</div>
-        <button class="btn btn-xs btn-outline-secondary" onclick="openEmojiAddModal()">
-          <i class="fas fa-plus me-1"></i>Adicionar manualmente
-        </button>
-      </div>
+  </div>
 
-      <!-- Instrução principal -->
-      <div class="p-3 rounded-2 mb-3" style="background:rgba(249,115,22,.07);border:1px solid rgba(249,115,22,.2);font-size:.84rem;">
-        <div style="font-weight:600;color:#fb923c;margin-bottom:6px;">
-          <i class="fas fa-bolt me-1"></i>Registro automático via DM
+  <!-- ── EMOJIS ── -->
+  <div id="page-emojis" style="display:none;">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title"><i class="fas fa-fire me-2" style="color:#f97316;"></i>Emojis Animados</h1>
+        <p class="page-subtitle">Registre emojis animados para uso automático nas mensagens</p>
+      </div>
+      <button class="btn btn-accent px-4" onclick="openEmojiAddModal()">
+        <i class="fas fa-plus me-2"></i>Adicionar manualmente
+      </button>
+    </div>
+
+    <!-- Instrução -->
+    <div class="card-box mb-4" style="border-color:rgba(249,115,22,.25);">
+      <div style="display:flex;gap:14px;align-items:flex-start;">
+        <div style="width:40px;height:40px;border-radius:10px;background:rgba(249,115,22,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <i class="fas fa-bolt" style="color:#f97316;font-size:1.1rem;"></i>
         </div>
-        <p style="color:rgba(255,255,255,.7);margin-bottom:8px;">
-          Envie uma mensagem contendo emojis animados diretamente para o bot no Telegram (chat privado).
-          O bot detecta o <code>custom_emoji_id</code> via API e salva o mapeamento automaticamente.
-        </p>
-        <p style="color:rgba(255,255,255,.55);margin:0;font-size:.78rem;">
-          Nas mensagens agendadas, basta usar o emoji normalmente no texto —
-          o sistema envolve com <code>&lt;tg-emoji emoji-id="..."&gt;</code> antes do envio.
-          Só funciona no modo de formatação <b>HTML</b>.
-        </p>
+        <div>
+          <div style="font-weight:600;color:#fb923c;margin-bottom:6px;">Como registrar automaticamente</div>
+          <p style="color:rgba(255,255,255,.7);font-size:.875rem;margin-bottom:8px;">
+            Abra o chat privado com o bot no Telegram e envie uma mensagem contendo os emojis animados que deseja usar.
+            O bot extrai o <code>custom_emoji_id</code> via API e salva o mapeamento automaticamente.
+          </p>
+          <p style="color:rgba(255,255,255,.5);font-size:.8rem;margin:0;">
+            Nas mensagens agendadas, use o emoji normalmente no texto (modo <b>HTML</b>) —
+            o sistema envolve automaticamente com <code>&lt;tg-emoji emoji-id="..."&gt;</code> antes de cada envio.
+          </p>
+        </div>
       </div>
+    </div>
 
+    <!-- Lista de emojis registrados -->
+    <div class="card-box">
+      <div class="section-label">Emojis registrados</div>
       <div id="emoji-map-list">
-        <div style="color:var(--text-muted);font-size:.84rem;text-align:center;padding:18px 0;">
+        <div style="color:var(--text-muted);font-size:.84rem;text-align:center;padding:24px 0;">
           <i class="fas fa-circle-notch fa-spin me-1"></i>Carregando...
         </div>
       </div>
     </div>
   </div>
 
+  <!-- ── ADMIN ── -->
+  <div id="page-admin" style="display:none;">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title"><i class="fas fa-shield-halved me-2" style="color:var(--accent2);"></i>Painel Admin</h1>
+        <p class="page-subtitle">Gerenciamento de usuários do dashboard</p>
+      </div>
+      <button class="btn btn-accent px-4" onclick="openUserModal()">
+        <i class="fas fa-user-plus me-2"></i>Novo Usuário
+      </button>
+    </div>
+
+    <!-- Stats row -->
+    <div class="row g-3 mb-4" id="admin-stats">
+      <div class="col-sm-4">
+        <div class="card-box text-center" style="padding:18px;">
+          <div style="font-size:1.6rem;font-weight:700;color:white;" id="stat-users">—</div>
+          <div style="font-size:.78rem;color:var(--text-muted);">Usuários</div>
+        </div>
+      </div>
+      <div class="col-sm-4">
+        <div class="card-box text-center" style="padding:18px;">
+          <div style="font-size:1.6rem;font-weight:700;color:white;" id="stat-messages">—</div>
+          <div style="font-size:.78rem;color:var(--text-muted);">Mensagens agendadas</div>
+        </div>
+      </div>
+      <div class="col-sm-4">
+        <div class="card-box text-center" style="padding:18px;">
+          <div style="font-size:1.6rem;font-weight:700;color:white;" id="stat-emojis">—</div>
+          <div style="font-size:.78rem;color:var(--text-muted);">Emojis registrados</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Users table -->
+    <div class="card-box">
+      <div class="section-label">Usuários do sistema</div>
+      <div id="users-list"></div>
+    </div>
+  </div>
+
 </main>
+
+<!-- ── MODAL USUÁRIO ── -->
+<div class="modal fade" id="userModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="user-modal-title">Novo Usuário</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="mb-3">
+          <label class="form-label">Nome de usuário</label>
+          <input type="text" class="form-control" id="u-username" placeholder="usuario">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Senha <span id="u-pass-hint" style="color:var(--text-muted);font-size:.75rem;"></span></label>
+          <div class="input-group">
+            <input type="password" class="form-control" id="u-password" placeholder="••••••••">
+            <button class="btn btn-outline-secondary" type="button" onclick="toggleTokenVis('u-password',this)">
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Perfil</label>
+          <select class="form-select" id="u-role">
+            <option value="user">Usuário</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+        <div class="form-check form-switch" id="u-active-wrap">
+          <input class="form-check-input" type="checkbox" id="u-active" checked>
+          <label class="form-check-label" for="u-active">Conta ativa</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-accent px-4" onclick="saveUser()">
+          <i class="fas fa-save me-2"></i>Salvar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ── MODAL EMOJI MANUAL ── -->
 <div class="modal fade" id="emojiModal" tabindex="-1">
@@ -602,8 +715,43 @@ async function checkStatus() {
   }
 }
 
+// ───────────────────────── Auth ──────────────────────────
+let currentUser = null;
+
+async function fetchCurrentUser() {
+  const r = await fetch("/auth/me");
+  if (r.status === 401) { window.location.href = "/login"; return null; }
+  return r.ok ? r.json() : null;
+}
+
+function confirmLogout() {
+  return confirm("Deseja sair do painel?");
+}
+
+// Intercepta todos os fetch() — redireciona para /login em 401
+const _origFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const res = await _origFetch(...args);
+  if (res.status === 401) {
+    const url = typeof args[0] === "string" ? args[0] : "";
+    if (!url.includes("/auth/")) { window.location.href = "/login"; }
+  }
+  return res;
+};
+
 // ───────────────────────── Init ──────────────────────────
 async function init() {
+  currentUser = await fetchCurrentUser();
+  if (!currentUser) return;
+
+  // Configura sidebar com info do usuário
+  document.getElementById("sidebar-username").textContent = currentUser.username;
+  const roleBadge = document.getElementById("sidebar-role-badge");
+  roleBadge.textContent = currentUser.role === "admin" ? "admin" : "user";
+  if (currentUser.role === "admin") {
+    document.getElementById("nav-admin").style.display = "";
+  }
+
   await Promise.all([fetchConfig(), fetchMessages()]);
   renderMsgList();
   checkStatus();
@@ -621,14 +769,19 @@ async function fetchMessages() {
 }
 
 // ───────────────────────── Navigation ────────────────────
+const PAGES = ["messages", "emojis", "bot", "config", "admin"];
+
 function showPage(page, el) {
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   el.classList.add("active");
-  document.getElementById("page-messages").style.display = page === "messages" ? "" : "none";
-  document.getElementById("page-bot").style.display      = page === "bot"      ? "" : "none";
-  document.getElementById("page-config").style.display   = page === "config"   ? "" : "none";
-  if (page === "config") { renderConfig(); fetchEmojiMap().then(renderEmojiMap); }
+  PAGES.forEach(p => {
+    const pageEl = document.getElementById(`page-${p}`);
+    if (pageEl) pageEl.style.display = p === page ? "" : "none";
+  });
+  if (page === "config") renderConfig();
   if (page === "bot")    renderBots();
+  if (page === "emojis") fetchEmojiMap().then(renderEmojiMap);
+  if (page === "admin")  loadAdminPage();
   closeSidebar();
 }
 
@@ -1292,6 +1445,156 @@ async function saveEmojiManual() {
   } else {
     const d = await r.json().catch(() => ({}));
     toast(d.error || "Erro ao salvar", "danger");
+  }
+}
+
+// ═════════════════════════ ADMIN PAGE ═══════════════════
+
+let usersData = [];
+let editingUserId = null;
+
+async function loadAdminPage() {
+  // Stats
+  const [usersR, emojiR] = await Promise.all([
+    fetch("/api/users").then(r => r.ok ? r.json() : []),
+    fetch("/api/emoji").then(r => r.ok ? r.json() : []),
+  ]);
+  usersData = usersR;
+
+  const el = id => document.getElementById(id);
+  el("stat-users").textContent    = usersData.length;
+  el("stat-messages").textContent = (store.messages || []).length;
+  el("stat-emojis").textContent   = emojiR.length;
+
+  renderUsersList();
+}
+
+function renderUsersList() {
+  const container = document.getElementById("users-list");
+  if (!container) return;
+
+  if (!usersData.length) {
+    container.innerHTML = `<div class="empty"><i class="fas fa-users"></i>Nenhum usuário encontrado.</div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border);font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">
+          <th style="padding:8px 12px;text-align:left;">Usuário</th>
+          <th style="padding:8px 12px;text-align:left;">Perfil</th>
+          <th style="padding:8px 12px;text-align:left;">Status</th>
+          <th style="padding:8px 12px;text-align:right;">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${usersData.map(u => `
+          <tr style="border-bottom:1px solid var(--border);" id="urow-${esc(u.id)}">
+            <td style="padding:12px;font-size:.9rem;font-weight:500;color:white;">
+              <i class="fas fa-user me-2" style="color:var(--text-muted);font-size:.8rem;"></i>
+              ${esc(u.username)}
+              ${u.id === (currentUser?.id) ? '<span style="font-size:.68rem;color:var(--accent2);margin-left:6px;">(você)</span>' : ""}
+            </td>
+            <td style="padding:12px;">
+              <span style="font-size:.72rem;padding:2px 8px;border-radius:10px;
+                ${u.role === 'admin'
+                  ? 'background:rgba(124,58,237,.25);border:1px solid rgba(124,58,237,.5);color:#c4b5fd;'
+                  : 'background:rgba(255,255,255,.07);border:1px solid var(--border);color:var(--text-muted);'}">
+                ${u.role === 'admin' ? '🛡 admin' : '👤 user'}
+              </span>
+            </td>
+            <td style="padding:12px;">
+              <span class="${u.active ? "status-on" : "status-off"}">
+                ● ${u.active ? "Ativo" : "Inativo"}
+              </span>
+            </td>
+            <td style="padding:12px;text-align:right;">
+              <div style="display:inline-flex;gap:6px;">
+                <button class="btn btn-outline-primary btn-icon" onclick="openEditUser('${esc(u.id)}')" title="Editar">
+                  <i class="fas fa-pen"></i>
+                </button>
+                ${u.id !== currentUser?.id ? `
+                <button class="btn btn-outline-danger btn-icon" onclick="deleteUser('${esc(u.id)}','${esc(u.username)}')" title="Excluir">
+                  <i class="fas fa-trash"></i>
+                </button>` : ""}
+              </div>
+            </td>
+          </tr>`).join("")}
+      </tbody>
+    </table>`;
+}
+
+function openUserModal() {
+  editingUserId = null;
+  document.getElementById("user-modal-title").textContent = "Novo Usuário";
+  document.getElementById("u-username").value  = "";
+  document.getElementById("u-username").disabled = false;
+  document.getElementById("u-password").value  = "";
+  document.getElementById("u-pass-hint").textContent = "";
+  document.getElementById("u-role").value      = "user";
+  document.getElementById("u-active").checked  = true;
+  document.getElementById("u-active-wrap").style.display = "none";
+  bootstrap.Modal.getOrCreateInstance(document.getElementById("userModal")).show();
+}
+
+function openEditUser(id) {
+  const u = usersData.find(x => x.id === id);
+  if (!u) return;
+  editingUserId = id;
+  document.getElementById("user-modal-title").textContent = "Editar Usuário";
+  document.getElementById("u-username").value   = u.username;
+  document.getElementById("u-username").disabled = true;
+  document.getElementById("u-password").value   = "";
+  document.getElementById("u-pass-hint").textContent = "(deixe em branco para não alterar)";
+  document.getElementById("u-role").value       = u.role;
+  document.getElementById("u-active").checked   = u.active;
+  document.getElementById("u-active-wrap").style.display = "";
+  bootstrap.Modal.getOrCreateInstance(document.getElementById("userModal")).show();
+}
+
+async function saveUser() {
+  const username = document.getElementById("u-username").value.trim();
+  const password = document.getElementById("u-password").value;
+  const role     = document.getElementById("u-role").value;
+  const active   = document.getElementById("u-active").checked;
+
+  if (!editingUserId && !username) { toast("Informe o nome de usuário", "danger"); return; }
+  if (!editingUserId && !password) { toast("Informe a senha", "danger"); return; }
+
+  const payload = { role };
+  if (!editingUserId) {
+    payload.username = username;
+    payload.password = password;
+  } else {
+    if (password) payload.password = password;
+    payload.active = active;
+  }
+
+  const url    = editingUserId ? `/api/users/${editingUserId}` : "/api/users";
+  const method = editingUserId ? "PUT" : "POST";
+  const r = await fetch(url, {
+    method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (r.ok) {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("userModal")).hide();
+    toast(editingUserId ? "Usuário atualizado!" : "Usuário criado!", "success");
+    await loadAdminPage();
+  } else {
+    toast(data.error || "Erro ao salvar", "danger");
+  }
+}
+
+async function deleteUser(id, username) {
+  if (!confirm(`Excluir o usuário "${username}" permanentemente?`)) return;
+  const r = await fetch(`/api/users/${id}`, { method: "DELETE" });
+  const d = await r.json().catch(() => ({}));
+  if (r.ok) {
+    toast("Usuário excluído", "success");
+    await loadAdminPage();
+  } else {
+    toast(d.error || "Erro ao excluir", "danger");
   }
 }
 
