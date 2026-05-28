@@ -213,6 +213,7 @@
   <span class="mobile-logo"><i class="fab fa-telegram me-2" style="color:var(--accent);"></i>Bot Manager</span>
   <div class="status-pill">
     <span class="dot offline" id="status-dot-mob"></span>
+    <span id="status-count-mob" style="font-size:.72rem;color:var(--text-muted);"></span>
   </div>
 </div>
 
@@ -244,11 +245,10 @@
     </a>
   </div>
   <div class="sidebar-footer">
-    <div class="status-pill">
-      <span class="dot" id="status-dot"></span>
-      <div style="min-width:0;">
-        <div id="bot-status" style="color:rgba(255,255,255,.5);font-size:.8rem;">Verificando...</div>
-        <div id="bot-name" style="color:rgba(255,255,255,.3);font-size:.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:155px;"></div>
+    <div id="sidebar-bots-status" style="margin-bottom:10px;">
+      <div style="font-size:.65rem;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">Bots online</div>
+      <div id="sidebar-bots-list" style="display:flex;flex-direction:column;gap:5px;">
+        <div style="color:var(--text-muted);font-size:.78rem;">Verificando...</div>
       </div>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
@@ -508,10 +508,16 @@
         <div class="mb-3">
           <label class="form-label">Token</label>
           <div class="token-row">
-            <input type="password" class="form-control token-field" id="bot-f-token" placeholder="123456789:ABCdefGHIjklmno...">
-            <button class="btn btn-outline-secondary btn-icon" onclick="toggleTokenVis('bot-f-token', this)" title="Mostrar/ocultar token">
-              <i class="fas fa-eye"></i>
+            <input type="text" class="form-control token-field" id="bot-f-token"
+                   placeholder="123456789:ABCdefGHIjklmno..."
+                   autocomplete="off" spellcheck="false"
+                   onfocus="this.select()" oninput="_checkTokenWarn(this.value)">
+            <button class="btn btn-outline-secondary btn-icon" onclick="clearTokenField()" title="Limpar campo">
+              <i class="fas fa-times"></i>
             </button>
+          </div>
+          <div id="bot-token-warn" style="display:none;font-size:.74rem;color:#f97316;margin-top:5px;">
+            <i class="fas fa-exclamation-triangle me-1"></i>Token placeholder detectado — substitua pelo token real do BotFather.
           </div>
         </div>
 
@@ -686,32 +692,34 @@ function onParseModeChange() {
 
 // ───────────────────────── Bot status ────────────────────
 async function checkStatus() {
-  const dot    = document.getElementById("status-dot");
-  const dotMob = document.getElementById("status-dot-mob");
-  const label  = document.getElementById("bot-status");
-  const name   = document.getElementById("bot-name");
+  const dotMob   = document.getElementById("status-dot-mob");
+  const countMob = document.getElementById("status-count-mob");
+  const listEl   = document.getElementById("sidebar-bots-list");
   try {
     const r    = await fetch("/api/status");
     const data = await r.json();
-    if (data.online) {
-      dot.classList.remove("offline");
+    const bots = data.bots || [];
+    const onlineBots = bots.filter(b => b.online);
+
+    if (onlineBots.length > 0) {
       dotMob.classList.remove("offline");
-      label.textContent = "Bot online";
-      label.style.color = "var(--success)";
-      name.textContent  = `@${data.username}`;
+      countMob.textContent = onlineBots.length > 1 ? `${onlineBots.length}` : "";
+      listEl.innerHTML = onlineBots.map(b => `
+        <div style="display:flex;align-items:center;gap:7px;">
+          <span class="dot" style="width:6px;height:6px;flex-shrink:0;"></span>
+          <span style="font-size:.78rem;color:rgba(255,255,255,.75);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            @${esc(b.username || b.bot_id)}
+          </span>
+        </div>`).join("");
     } else {
-      dot.classList.add("offline");
       dotMob.classList.add("offline");
-      label.textContent = "Bot offline";
-      label.style.color = "var(--danger)";
-      name.textContent  = data.reason || "";
+      countMob.textContent = "";
+      listEl.innerHTML = `<div style="color:var(--text-muted);font-size:.78rem;display:flex;align-items:center;gap:6px;"><span class="dot offline" style="width:6px;height:6px;"></span>Nenhum bot online</div>`;
     }
   } catch {
-    dot.classList.add("offline");
     dotMob.classList.add("offline");
-    label.textContent = "Sem conexão";
-    label.style.color = "var(--danger)";
-    name.textContent  = "";
+    countMob.textContent = "";
+    listEl.innerHTML = `<div style="color:var(--text-muted);font-size:.78rem;">Sem conexão</div>`;
   }
 }
 
@@ -1238,10 +1246,12 @@ function renderBotCard(b) {
         ${!online && st.reason ? `<div style="font-size:.78rem;color:var(--danger);margin-top:4px;"><i class="fas fa-exclamation-triangle me-1"></i>${esc(st.reason)}</div>` : ""}
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
-        ${!b.active ? `<button class="btn btn-xs btn-outline-primary" onclick="activateBot('${esc(b.id)}')"><i class="fas fa-bolt me-1"></i>Ativar</button>` : `<button class="btn btn-xs btn-outline-secondary" disabled><i class="fas fa-bolt me-1"></i>Ativo</button>`}
+        ${b.running
+          ? `<button class="btn btn-xs btn-outline-danger" onclick="deactivateBot('${esc(b.id)}')"><i class="fas fa-stop me-1"></i>Parar</button>`
+          : `<button class="btn btn-xs btn-outline-primary" onclick="activateBot('${esc(b.id)}')"><i class="fas fa-play me-1"></i>Iniciar</button>`}
         <button class="btn btn-xs btn-outline-secondary" onclick="openBotModal('${esc(b.id)}')"><i class="fas fa-pen me-1"></i>Editar</button>
         <button class="btn btn-xs btn-outline-secondary" onclick="reverifyBot('${esc(b.id)}')"><i class="fas fa-sync me-1"></i>Verificar</button>
-        ${!b.active ? `<button class="btn btn-xs btn-outline-danger" onclick="deleteBot('${esc(b.id)}')"><i class="fas fa-trash"></i></button>` : ""}
+        ${!b.running ? `<button class="btn btn-xs btn-outline-danger" onclick="deleteBot('${esc(b.id)}')"><i class="fas fa-trash"></i></button>` : ""}
       </div>
     </div>
   </div>`;
@@ -1262,14 +1272,29 @@ function toggleTokenVis(inputId, btn) {
   btn.querySelector("i").className = show ? "fas fa-eye-slash" : "fas fa-eye";
 }
 
+const _PLACEHOLDER_TOKENS = new Set(["SEU_TOKEN_AQUI","SEU_TOKEN_DO_BOT_AQUI","YOUR_TOKEN_HERE"]);
+
+function clearTokenField() {
+  const inp = document.getElementById("bot-f-token");
+  inp.value = "";
+  inp.focus();
+  document.getElementById("bot-token-warn").style.display = "none";
+}
+
+function _checkTokenWarn(val) {
+  const warn = document.getElementById("bot-token-warn");
+  if (!warn) return;
+  warn.style.display = (_PLACEHOLDER_TOKENS.has(val) || !val.includes(":")) && val ? "" : "none";
+}
+
 function openBotModal(id) {
   editingBotId = id || null;
   const bot = id ? _botsData.find(b => b.id === id) : null;
   document.getElementById("bot-modal-title").textContent = bot ? "Editar Bot" : "Adicionar Bot";
   document.getElementById("bot-f-name").value  = bot ? bot.name  : "";
   document.getElementById("bot-f-token").value = bot ? bot.token : "";
-  document.getElementById("bot-f-token").type  = "password";
   document.getElementById("bot-verify-result").style.display = "none";
+  _checkTokenWarn(bot ? bot.token : "");
   bootstrap.Modal.getOrCreateInstance(document.getElementById("botModal")).show();
 }
 
@@ -1334,15 +1359,24 @@ async function saveBotModal() {
 async function activateBot(id) {
   const r = await fetch(`/api/bots/${id}/activate`, { method: "POST" });
   if (r.ok) {
-    toast("Conectando bot...", "info");
-    // Aguarda o bot inicializar e atualiza status + cards
-    setTimeout(async () => {
-      await renderBots();
-      checkStatus();
-    }, 3000);
+    toast("Iniciando bot...", "info");
+    setTimeout(async () => { await renderBots(); checkStatus(); }, 3000);
   } else {
     const d = await r.json().catch(() => ({}));
-    toast(d.error || "Erro ao ativar bot", "danger");
+    toast(d.error || "Erro ao iniciar bot", "danger");
+  }
+}
+
+async function deactivateBot(id) {
+  if (!confirm("Parar este bot?")) return;
+  const r = await fetch(`/api/bots/${id}/deactivate`, { method: "POST" });
+  if (r.ok) {
+    toast("Bot parado.", "info");
+    await renderBots();
+    checkStatus();
+  } else {
+    const d = await r.json().catch(() => ({}));
+    toast(d.error || "Erro ao parar bot", "danger");
   }
 }
 

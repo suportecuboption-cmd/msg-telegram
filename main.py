@@ -53,10 +53,10 @@ def _init_data_dir() -> None:
                 _MESSAGES_FILE.write_text('{"messages": []}', encoding="utf-8")
             logger.info("messages.json inicializado em %s", _DATA)
     else:
-        db_module.init_db()        # ← cria as tabelas PRIMEIRO
+        db_module.init_db()
         db_module.migrate_from_json()
 
-    db_module.create_default_admin()  # ← só depois que as tabelas existem
+    db_module.create_default_admin()
 
 
 def load_config() -> dict:
@@ -64,30 +64,44 @@ def load_config() -> dict:
     return db_module.load_config()
 
 
+_PLACEHOLDER_TOKENS = {"SEU_TOKEN_AQUI", "SEU_TOKEN_DO_BOT_AQUI", "YOUR_TOKEN_HERE"}
+
+
+def _is_valid_token(token: str) -> bool:
+    return bool(token) and token not in _PLACEHOLDER_TOKENS and ":" in token
+
+
 class BotManager:
-    """Gerencia o ciclo de vida do Application do Telegram.
-    Permite parar e reiniciar o bot sem encerrar o processo."""
+    """Gerencia múltiplas instâncias de bot do Telegram simultaneamente."""
 
     def __init__(self) -> None:
-        self._app = None
-        self._scheduler = None
+        self._apps: dict = {}       # bot_id -> Application
+        self._schedulers: dict = {} # bot_id -> AsyncIOScheduler
         self._lock = asyncio.Lock()
+
+    def get_bot(self, bot_id: str = None):
+        """Retorna o bot do bot_id especificado ou o primeiro disponível."""
+        if bot_id and bot_id in self._apps:
+            return self._apps[bot_id].bot
+        for app in self._apps.values():
+            return app.bot
+        return None
 
     @property
     def bot(self):
-        return self._app.bot if self._app else None
+        """Compatibilidade: retorna o primeiro bot em execução."""
+        return self.get_bot()
 
     @property
-    def running(self) -> bool:
-        return self._app is not None
+    def running_bot_ids(self) -> list:
+        return list(self._apps.keys())
 
-    async def start(self, token: str, config: dict) -> None:
+    async def start_bot(self, bot_id: str, token: str, config: dict) -> None:
         async with self._lock:
-            await self._stop_internal()
+            await self._stop_bot_internal(bot_id)
 
-            _placeholders = {"SEU_TOKEN_AQUI", "SEU_TOKEN_DO_BOT_AQUI", "YOUR_TOKEN_HERE"}
-            if not token or token in _placeholders or ":" not in token:
-                logger.warning("Token não configurado — bot permanece offline.")
+            if not _is_valid_token(token):
+                logger.warning("Token inválido para bot %s — permanece offline.", bot_id)
                 return
 
             from telegram.ext import Application
@@ -95,7 +109,6 @@ class BotManager:
             import bot as bot_module
 
             app = Application.builder().token(token).build()
-
             scheduler = AsyncIOScheduler(
                 timezone=config.get("timezone", "America/Sao_Paulo")
             )
@@ -108,40 +121,43 @@ class BotManager:
                 await app.start()
                 await app.updater.start_polling(drop_pending_updates=True)
             except Exception as exc:
-                logger.error("Falha ao iniciar bot (token inválido?): %s", exc)
+                logger.error("Falha ao iniciar bot %s (token inválido?): %s", bot_id, exc)
                 scheduler.shutdown(wait=False)
                 return
 
-            self._app = app
-            self._scheduler = scheduler
-            logger.info("Bot iniciado — token: ...%s", token[-8:])
+            self._apps[bot_id] = app
+            self._schedulers[bot_id] = scheduler
+            logger.info("Bot %s iniciado — token: ...%s", bot_id, token[-8:])
 
-    async def restart(self, token: str, config: dict) -> None:
-        logger.info("Reiniciando bot com novo token...")
-        await self.start(token, config)
+    async def stop_bot(self, bot_id: str) -> None:
+        async with self._lock:
+            await self._stop_bot_internal(bot_id)
 
     async def reload_scheduler(self, config: dict) -> None:
         import bot as bot_module
-        if self._app and self._scheduler:
-            bot_module.setup_scheduler(self._scheduler, self._app.bot, config)
-            logger.info("Scheduler recarregado")
+        for bot_id, scheduler in self._schedulers.items():
+            app = self._apps.get(bot_id)
+            if app and scheduler:
+                bot_module.setup_scheduler(scheduler, app.bot, config)
+        if self._apps:
+            logger.info("Scheduler recarregado para %d bot(s)", len(self._apps))
 
     async def shutdown(self) -> None:
-        async with self._lock:
-            await self._stop_internal()
+        for bot_id in list(self._apps.keys()):
+            await self._stop_bot_internal(bot_id)
 
-    async def _stop_internal(self) -> None:
-        if self._scheduler and self._scheduler.running:
-            self._scheduler.shutdown(wait=False)
-            self._scheduler = None
-        if self._app:
+    async def _stop_bot_internal(self, bot_id: str) -> None:
+        scheduler = self._schedulers.pop(bot_id, None)
+        if scheduler and scheduler.running:
+            scheduler.shutdown(wait=False)
+        app = self._apps.pop(bot_id, None)
+        if app:
             try:
-                await self._app.updater.stop()
-                await self._app.stop()
-                await self._app.shutdown()
+                await app.updater.stop()
+                await app.stop()
+                await app.shutdown()
             except Exception as exc:
-                logger.error("Erro ao parar bot: %s", exc)
-            self._app = None
+                logger.error("Erro ao parar bot %s: %s", bot_id, exc)
 
 
 async def run() -> None:
@@ -156,17 +172,19 @@ async def run() -> None:
         fresh = load_config()
         asyncio.run_coroutine_threadsafe(manager.reload_scheduler(fresh), loop)
 
-    def restart_cb(token: str) -> None:
+    def start_bot_cb(bot_id: str, token: str) -> None:
         fresh = load_config()
-        fresh["bot_token"] = token
-        asyncio.run_coroutine_threadsafe(manager.restart(token, fresh), loop)
+        asyncio.run_coroutine_threadsafe(manager.start_bot(bot_id, token, fresh), loop)
+
+    def stop_bot_cb(bot_id: str) -> None:
+        asyncio.run_coroutine_threadsafe(manager.stop_bot(bot_id), loop)
 
     # ── Iniciar servidor web ───────────────────────────────────────────────
 
     import web as web_module
 
     flask_app = web_module.create_app()
-    web_module.set_context(manager, loop, reload_cb, restart_cb)
+    web_module.set_context(manager, loop, reload_cb, start_bot_cb, stop_bot_cb)
 
     port = int(os.getenv("PORT", config.get("web_port", 5000)))
     flask_thread = threading.Thread(
@@ -178,9 +196,11 @@ async def run() -> None:
     flask_thread.start()
     logger.info("Dashboard disponível em: http://localhost:%d", port)
 
-    # ── Iniciar bot ────────────────────────────────────────────────────────
+    # ── Iniciar todos os bots ativos ───────────────────────────────────────
 
-    await manager.start(config.get("bot_token", ""), config)
+    for bot_cfg in config.get("bots", []):
+        if bot_cfg.get("active") and _is_valid_token(bot_cfg.get("token", "")):
+            await manager.start_bot(bot_cfg["id"], bot_cfg["token"], config)
 
     try:
         await asyncio.Event().wait()

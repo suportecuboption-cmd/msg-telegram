@@ -18,19 +18,23 @@ import db as _db
 _manager = None
 _loop: Optional[asyncio.AbstractEventLoop] = None
 _reload_callback: Optional[Callable] = None
-_restart_callback: Optional[Callable] = None
+_start_bot_callback: Optional[Callable] = None
+_stop_bot_callback: Optional[Callable] = None
 
 # Quando NO_AUTH=1/true o login é desativado (útil para dev local)
 NO_AUTH = os.getenv("NO_AUTH", "").lower() in ("1", "true", "yes")
 
 
 def set_context(manager, loop: asyncio.AbstractEventLoop,
-                reload_callback: Callable, restart_callback: Callable) -> None:
-    global _manager, _loop, _reload_callback, _restart_callback
+                reload_callback: Callable,
+                start_bot_callback: Callable,
+                stop_bot_callback: Callable) -> None:
+    global _manager, _loop, _reload_callback, _start_bot_callback, _stop_bot_callback
     _manager = manager
     _loop = loop
     _reload_callback = reload_callback
-    _restart_callback = restart_callback
+    _start_bot_callback = start_bot_callback
+    _stop_bot_callback = stop_bot_callback
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
@@ -224,10 +228,11 @@ def create_app() -> Flask:
     @login_required
     def list_bots():
         cfg = _load_config()
+        running_ids = set(_manager.running_bot_ids) if _manager else set()
         result = []
         for b in cfg.get("bots", []):
             status = _check_token(b.get("token", ""))
-            result.append({**b, "status": status})
+            result.append({**b, "status": status, "running": b["id"] in running_ids})
         return jsonify(result)
 
     @app.route("/api/bots/check", methods=["POST"])
@@ -258,35 +263,48 @@ def create_app() -> Flask:
     def update_bot(bot_id):
         data = request.get_json(force=True)
         cfg  = _load_config()
+        running_ids = set(_manager.running_bot_ids) if _manager else set()
         for i, b in enumerate(cfg.get("bots", [])):
             if b["id"] == bot_id:
-                cfg["bots"][i]["name"]  = data.get("name",  b["name"])
-                cfg["bots"][i]["token"] = data.get("token", b["token"])
-                if b.get("active"):
-                    cfg["bot_token"] = cfg["bots"][i]["token"]
-                    _save_config(cfg)
-                    if _restart_callback:
-                        _restart_callback(cfg["bot_token"])
-                else:
-                    _save_config(cfg)
+                new_token = data.get("token", b["token"]).strip()
+                cfg["bots"][i]["name"]  = data.get("name", b["name"])
+                cfg["bots"][i]["token"] = new_token
+                _save_config(cfg)
+                if bot_id in running_ids and _start_bot_callback:
+                    _start_bot_callback(bot_id, new_token)
                 return jsonify(cfg["bots"][i])
         return jsonify({"error": "Bot não encontrado"}), 404
 
     @app.route("/api/bots/<bot_id>/activate", methods=["POST"])
     @login_required
     def activate_bot(bot_id):
-        cfg       = _load_config()
-        activated = None
+        cfg = _load_config()
+        bot_to_start = None
         for b in cfg.get("bots", []):
-            b["active"] = b["id"] == bot_id
-            if b["active"]:
-                activated = b
-        if not activated:
+            if b["id"] == bot_id:
+                b["active"] = True
+                bot_to_start = b
+        if not bot_to_start:
             return jsonify({"error": "Bot não encontrado"}), 404
-        cfg["bot_token"] = activated["token"]
         _save_config(cfg)
-        if _restart_callback:
-            _restart_callback(activated["token"])
+        if _start_bot_callback:
+            _start_bot_callback(bot_id, bot_to_start["token"])
+        return jsonify({"success": True})
+
+    @app.route("/api/bots/<bot_id>/deactivate", methods=["POST"])
+    @login_required
+    def deactivate_bot(bot_id):
+        cfg = _load_config()
+        found = False
+        for b in cfg.get("bots", []):
+            if b["id"] == bot_id:
+                b["active"] = False
+                found = True
+        if not found:
+            return jsonify({"error": "Bot não encontrado"}), 404
+        _save_config(cfg)
+        if _stop_bot_callback:
+            _stop_bot_callback(bot_id)
         return jsonify({"success": True})
 
     @app.route("/api/bots/<bot_id>", methods=["DELETE"])
@@ -305,25 +323,26 @@ def create_app() -> Flask:
     @app.route("/api/status", methods=["GET"])
     @login_required
     def get_status():
-        bot = _manager.bot if _manager else None
-        if bot and _loop:
-            try:
-                future = asyncio.run_coroutine_threadsafe(bot.get_me(), _loop)
-                info   = future.result(timeout=5)
-                return jsonify({"online": True, "name": info.full_name,
-                                "username": info.username, "id": info.id})
-            except Exception:
-                pass
-        try:
-            cfg = _load_config()
-            active_token = cfg.get("bot_token", "")
-            for b in cfg.get("bots", []):
-                if b.get("active"):
-                    active_token = b.get("token", active_token)
-                    break
-            return jsonify(_check_token(active_token))
-        except Exception as exc:
-            return jsonify({"online": False, "reason": str(exc)})
+        running_ids = list(_manager.running_bot_ids) if _manager else []
+        if not running_ids:
+            return jsonify({"online": False, "bots": []})
+
+        bots_info = []
+        for bot_id in running_ids:
+            bot = _manager.get_bot(bot_id) if _manager else None
+            if bot and _loop:
+                try:
+                    future = asyncio.run_coroutine_threadsafe(bot.get_me(), _loop)
+                    info = future.result(timeout=5)
+                    bots_info.append({
+                        "bot_id": bot_id, "online": True,
+                        "name": info.full_name, "username": info.username,
+                        "id": info.id,
+                    })
+                except Exception:
+                    bots_info.append({"bot_id": bot_id, "online": False})
+
+        return jsonify({"online": bool(bots_info), "bots": bots_info})
 
     # ── Config ────────────────────────────────────────────────────────────────
 
@@ -396,9 +415,9 @@ def create_app() -> Flask:
     @app.route("/api/messages/<message_id>/send-now", methods=["POST"])
     @login_required
     def send_now(message_id):
-        bot = _manager.bot if _manager else None
+        bot = _manager.get_bot() if _manager else None
         if not bot or not _loop:
-            return jsonify({"error": "Bot não disponível — configure e ative um token"}), 503
+            return jsonify({"error": "Nenhum bot online — ative pelo menos um bot"}), 503
 
         data  = request.get_json(force=True) or {}
         cfg   = _load_config()
