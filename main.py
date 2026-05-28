@@ -38,7 +38,6 @@ def _init_data_dir() -> None:
     _DATA.mkdir(parents=True, exist_ok=True)
 
     import db as db_module
-    db_module.create_default_admin()
     if not db_module.use_postgres():
         if not _CONFIG_FILE.exists():
             src = Path("config.example.json")
@@ -54,8 +53,10 @@ def _init_data_dir() -> None:
                 _MESSAGES_FILE.write_text('{"messages": []}', encoding="utf-8")
             logger.info("messages.json inicializado em %s", _DATA)
     else:
-        db_module.init_db()
+        db_module.init_db()        # ← cria as tabelas PRIMEIRO
         db_module.migrate_from_json()
+
+    db_module.create_default_admin()  # ← só depois que as tabelas existem
 
 
 def load_config() -> dict:
