@@ -58,23 +58,32 @@ async def send_scheduled_message(
     config: dict,
     image: Optional[str],
     message_name: str,
+    parse_mode: Optional[str] = "HTML",
 ) -> None:
+    """Envia uma mensagem agendada para o chat_id.
+
+    parse_mode pode ser "HTML", "MarkdownV2" ou None/"none" (sem formatação).
+    Para usar emojis animados do Telegram em modo HTML, utilize a tag:
+        <tg-emoji emoji-id="ID_DO_EMOJI">🔥</tg-emoji>
+    """
     try:
         keyboard = build_keyboard(button_keys, config)
+        # Normaliza: "none" ou vazio → None (sem parse_mode)
+        pm = parse_mode if parse_mode and parse_mode.lower() not in ("none", "") else None
         if image:
             await bot.send_photo(
                 chat_id=chat_id,
                 photo=image,
                 caption=text,
                 reply_markup=keyboard,
-                parse_mode="HTML",
+                parse_mode=pm,
             )
         else:
             await bot.send_message(
                 chat_id=chat_id,
                 text=text,
                 reply_markup=keyboard,
-                parse_mode="HTML",
+                parse_mode=pm,
             )
         logger.info("Mensagem '%s' enviada para %s", message_name, chat_id)
     except Exception as exc:
@@ -117,7 +126,8 @@ def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None
                     timezone=timezone,
                 ),
                 args=[bot, message["text"], group["id"], button_keys, config,
-                      message.get("image"), message.get("name", "")],
+                      message.get("image"), message.get("name", ""),
+                      message.get("parse_mode", "HTML")],
                 id=job_id,
                 replace_existing=True,
                 misfire_grace_time=300,

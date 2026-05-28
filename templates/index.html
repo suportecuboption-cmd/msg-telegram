@@ -377,7 +377,25 @@
             </div>
 
             <div class="mb-3">
-              <label class="form-label">Texto <span style="color:var(--text-muted);font-size:.75rem;">(suporta HTML: &lt;b&gt; &lt;i&gt; &lt;a&gt;)</span></label>
+              <div class="d-flex align-items-center justify-content-between mb-1">
+                <label class="form-label mb-0">Texto</label>
+                <div class="d-flex align-items-center gap-2">
+                  <select class="form-select form-select-sm" id="f-parse-mode" style="width:auto;font-size:.78rem;" onchange="onParseModeChange()">
+                    <option value="HTML">HTML</option>
+                    <option value="MarkdownV2">MarkdownV2</option>
+                    <option value="none">Sem formatação</option>
+                  </select>
+                  <button type="button" class="btn btn-xs btn-outline-secondary" title="Ajuda sobre emojis animados"
+                    data-bs-toggle="popover" data-bs-placement="left" data-bs-html="true"
+                    data-bs-trigger="focus"
+                    data-bs-content="<b>Emojis animados (HTML)</b><br>Use a tag:<br><code>&lt;tg-emoji emoji-id=&quot;ID&quot;&gt;🔥&lt;/tg-emoji&gt;</code><br><br>Para descobrir o ID, envie um emoji animado para <b>@userinfobot</b> e copie o <code>custom_emoji_id</code>.<br><br>Exemplo com 🔥:<br><code>&lt;tg-emoji emoji-id=&quot;5368324170671202286&quot;&gt;🔥&lt;/tg-emoji&gt;</code>">
+                    <i class="fas fa-fire" style="color:#f97316;"></i>
+                  </button>
+                </div>
+              </div>
+              <div id="parse-mode-hint" style="font-size:.74rem;color:var(--text-muted);margin-bottom:6px;">
+                Suporta <b style="color:rgba(255,255,255,.5);">&lt;b&gt; &lt;i&gt; &lt;a&gt; &lt;code&gt; &lt;tg-emoji&gt;</b>
+              </div>
               <textarea class="form-control" id="f-text" rows="7" placeholder="Digite o conteúdo da mensagem..."></textarea>
             </div>
 
@@ -475,6 +493,19 @@ function toggleSidebar() {
 function closeSidebar() {
   document.getElementById("sidebar").classList.remove("open");
   document.getElementById("sidebar-overlay").classList.remove("active");
+}
+
+// ───────────────────────── Parse mode hint ───────────────
+function onParseModeChange() {
+  const pm   = document.getElementById("f-parse-mode").value;
+  const hint = document.getElementById("parse-mode-hint");
+  if (pm === "HTML") {
+    hint.innerHTML = 'Suporta <b style="color:rgba(255,255,255,.5);">&lt;b&gt; &lt;i&gt; &lt;a&gt; &lt;code&gt; &lt;tg-emoji&gt;</b> — <span style="color:#f97316;">🔥 clique no ícone para usar emojis animados</span>';
+  } else if (pm === "MarkdownV2") {
+    hint.innerHTML = 'Suporta <b style="color:rgba(255,255,255,.5);">**negrito** _itálico_ `código`</b> — escape caracteres especiais com \\';
+  } else {
+    hint.innerHTML = '<span style="color:var(--text-muted);">Texto simples — sem formatação, emojis Unicode normais 😀🔥</span>';
+  }
 }
 
 // ───────────────────────── Bot status ────────────────────
@@ -599,6 +630,8 @@ function openAdd() {
   document.getElementById("f-text").value  = "";
   document.getElementById("f-image").value = "";
   document.getElementById("f-active").checked = true;
+  document.getElementById("f-parse-mode").value = "HTML";
+  onParseModeChange();
   document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
   document.getElementById("scheds-empty").style.display = "";
   getMsgModal().show();
@@ -614,6 +647,8 @@ function openEdit(id) {
   document.getElementById("f-text").value  = msg.text  || "";
   document.getElementById("f-image").value = msg.image || "";
   document.getElementById("f-active").checked = msg.active !== false;
+  document.getElementById("f-parse-mode").value = msg.parse_mode || "HTML";
+  onParseModeChange();
 
   document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
   const hasScheds = (msg.schedules || []).length > 0;
@@ -722,11 +757,12 @@ async function saveMessage() {
   if (!text) { toast("Digite o texto da mensagem", "danger"); return; }
 
   const payload = {
-    name:      document.getElementById("f-name").value.trim() || "Sem nome",
+    name:       document.getElementById("f-name").value.trim() || "Sem nome",
     text,
-    image:     document.getElementById("f-image").value.trim() || null,
-    active:    document.getElementById("f-active").checked,
-    schedules: collectSchedules(),
+    image:      document.getElementById("f-image").value.trim() || null,
+    active:     document.getElementById("f-active").checked,
+    parse_mode: document.getElementById("f-parse-mode").value,
+    schedules:  collectSchedules(),
   };
 
   const url    = editingId ? `/api/messages/${editingId}` : "/api/messages";
@@ -1111,6 +1147,13 @@ async function deleteBot(id) {
 }
 
 // ─── Start ────────────────────────────────────────────────
+// Inicializa popovers do Bootstrap (usado no botão de ajuda dos emojis animados)
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => {
+    bootstrap.Popover.getOrCreateInstance(el);
+  });
+});
+
 init();
 </script>
 </body>

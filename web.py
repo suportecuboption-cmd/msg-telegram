@@ -223,6 +223,7 @@ def create_app() -> Flask:
             "text": data.get("text", ""),
             "image": data.get("image") or None,
             "active": data.get("active", True),
+            "parse_mode": data.get("parse_mode", "HTML"),
             "schedules": _ensure_schedule_ids(data.get("schedules", [])),
         }
         _db.upsert_message(message)
@@ -234,6 +235,7 @@ def create_app() -> Flask:
     def update_message(message_id):
         data = request.get_json(force=True)
         data["id"] = message_id
+        data.setdefault("parse_mode", "HTML")
         data["schedules"] = _ensure_schedule_ids(data.get("schedules", []))
         _db.upsert_message(data)
         if _reload_callback:
@@ -283,6 +285,7 @@ def create_app() -> Flask:
                 send_scheduled_message(
                     bot, message["text"], group["id"],
                     button_keys, cfg, message.get("image"), message.get("name", ""),
+                    message.get("parse_mode", "HTML"),
                 ),
                 _loop,
             )
