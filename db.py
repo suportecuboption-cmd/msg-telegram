@@ -553,6 +553,28 @@ def create_default_admin() -> None:
     )
 
 
+# ── Emoji defaults ────────────────────────────────────────────────────────────
+
+# Mapeamento padrão do pack animado COMPRA.
+# Estes IDs são aplicados/sobrescritos a cada inicialização para garantir
+# que os emojis corretos estejam sempre no banco.
+_COMPRA_EMOJI_MAP: dict = {
+    "C": "5330523098347218561",
+    "O": "5361583176550457135",
+    "M": "5332321341024508571",
+    "P": "5361909160273255840",
+    "R": "5332514996804918116",
+    "A": "5226734466315067436",
+}
+
+
+def seed_emoji_defaults() -> None:
+    """Garante que os emojis animados do pack COMPRA estejam registrados."""
+    for char, emoji_id in _COMPRA_EMOJI_MAP.items():
+        save_emoji(char, emoji_id)
+    logger.info("Emojis padrão COMPRA aplicados (%d letras)", len(_COMPRA_EMOJI_MAP))
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _apply_env(cfg: dict) -> None:

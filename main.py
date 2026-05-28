@@ -57,6 +57,7 @@ def _init_data_dir() -> None:
         db_module.migrate_from_json()
 
     db_module.create_default_admin()
+    db_module.seed_emoji_defaults()
 
 
 def load_config() -> dict:
