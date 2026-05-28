@@ -114,27 +114,42 @@ async def handle_emoji_registration(update, context) -> None:
     if not msg:
         return
 
-    text = msg.text or msg.caption or ""
     entities = list(msg.entities or []) + list(msg.caption_entities or [])
     custom_entities = [e for e in entities if e.type == "custom_emoji"]
 
     if not custom_entities:
-        # Não responde a mensagens sem emoji animado para não ser intrusivo
         return
 
     registered = []
     for entity in custom_entities:
-        emoji_char = text[entity.offset: entity.offset + entity.length]
+        # parse_entity() converte offsets UTF-16 (API do Telegram) para índices
+        # Python corretamente — evita extração errada quando há emojis multi-byte
+        # antes da entidade no mesmo texto.
+        try:
+            emoji_char = msg.parse_entity(entity)
+        except Exception:
+            # fallback: indexação direta (só correto para texto puramente ASCII)
+            text = msg.text or msg.caption or ""
+            emoji_char = text[entity.offset: entity.offset + entity.length]
+
         emoji_id = entity.custom_emoji_id
         if emoji_char and emoji_id:
             _db.save_emoji(emoji_char, emoji_id)
-            if emoji_char not in registered:
-                registered.append(emoji_char)
+            key = (emoji_char, emoji_id)
+            if key not in registered:
+                registered.append(key)
 
     if registered:
+        lines = []
+        for emoji_char, emoji_id in registered:
+            codepoints = " ".join(f"U+{ord(c):04X}" for c in emoji_char)
+            lines.append(
+                f"{emoji_char}  <code>{emoji_id[:20]}…</code>  "
+                f"<i>({codepoints})</i>"
+            )
         await msg.reply_text(
-            f"✅ <b>{len(registered)} emoji(s) animado(s) registrado(s):</b> "
-            + " ".join(registered)
+            f"✅ <b>{len(registered)} emoji(s) registrado(s):</b>\n\n"
+            + "\n".join(lines)
             + "\n\nUse-os normalmente no dashboard — o sistema aplica o ID automaticamente!",
             parse_mode="HTML",
         )
