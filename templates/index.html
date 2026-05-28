@@ -303,7 +303,7 @@
     </div>
 
     <!-- Buttons -->
-    <div class="card-box">
+    <div class="card-box mb-4">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <div class="section-label mb-0">Botões</div>
         <button class="btn btn-xs btn-outline-secondary" onclick="addButtonRow()">
@@ -312,9 +312,72 @@
       </div>
       <div id="buttons-list"></div>
     </div>
+
+    <!-- Animated Emoji -->
+    <div class="card-box">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="section-label mb-0"><i class="fas fa-fire me-1" style="color:#f97316;"></i>Emojis Animados</div>
+        <button class="btn btn-xs btn-outline-secondary" onclick="openEmojiAddModal()">
+          <i class="fas fa-plus me-1"></i>Adicionar manualmente
+        </button>
+      </div>
+
+      <!-- Instrução principal -->
+      <div class="p-3 rounded-2 mb-3" style="background:rgba(249,115,22,.07);border:1px solid rgba(249,115,22,.2);font-size:.84rem;">
+        <div style="font-weight:600;color:#fb923c;margin-bottom:6px;">
+          <i class="fas fa-bolt me-1"></i>Registro automático via DM
+        </div>
+        <p style="color:rgba(255,255,255,.7);margin-bottom:8px;">
+          Envie uma mensagem contendo emojis animados diretamente para o bot no Telegram (chat privado).
+          O bot detecta o <code>custom_emoji_id</code> via API e salva o mapeamento automaticamente.
+        </p>
+        <p style="color:rgba(255,255,255,.55);margin:0;font-size:.78rem;">
+          Nas mensagens agendadas, basta usar o emoji normalmente no texto —
+          o sistema envolve com <code>&lt;tg-emoji emoji-id="..."&gt;</code> antes do envio.
+          Só funciona no modo de formatação <b>HTML</b>.
+        </p>
+      </div>
+
+      <div id="emoji-map-list">
+        <div style="color:var(--text-muted);font-size:.84rem;text-align:center;padding:18px 0;">
+          <i class="fas fa-circle-notch fa-spin me-1"></i>Carregando...
+        </div>
+      </div>
+    </div>
   </div>
 
 </main>
+
+<!-- ── MODAL EMOJI MANUAL ── -->
+<div class="modal fade" id="emojiModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Adicionar Emoji Animado</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="mb-3">
+          <label class="form-label">Emoji <span style="color:var(--text-muted);font-size:.75rem;">(cole o caractere)</span></label>
+          <input type="text" class="form-control text-center" id="emoji-f-char" placeholder="🔥" style="font-size:1.6rem;height:54px;">
+        </div>
+        <div class="mb-1">
+          <label class="form-label">custom_emoji_id <span style="color:var(--text-muted);font-size:.75rem;">(via @RawDataBot)</span></label>
+          <input type="text" class="form-control" id="emoji-f-id" placeholder="5368324170671202286" style="font-family:monospace;font-size:.85rem;">
+        </div>
+        <div class="mt-2" style="font-size:.75rem;color:var(--text-muted);">
+          <i class="fas fa-info-circle me-1"></i>Prefira o registro automático: envie o emoji animado ao bot via DM.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-accent px-4" onclick="saveEmojiManual()">
+          <i class="fas fa-save me-2"></i>Salvar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ── MODAL BOT ── -->
 <div class="modal fade" id="botModal" tabindex="-1">
@@ -564,7 +627,7 @@ function showPage(page, el) {
   document.getElementById("page-messages").style.display = page === "messages" ? "" : "none";
   document.getElementById("page-bot").style.display      = page === "bot"      ? "" : "none";
   document.getElementById("page-config").style.display   = page === "config"   ? "" : "none";
-  if (page === "config") renderConfig();
+  if (page === "config") { renderConfig(); fetchEmojiMap().then(renderEmojiMap); }
   if (page === "bot")    renderBots();
   closeSidebar();
 }
@@ -1144,6 +1207,92 @@ async function deleteBot(id) {
   const r = await fetch(`/api/bots/${id}`, { method: "DELETE" });
   if (r.ok) { toast("Bot removido", "success"); renderBots(); }
   else       { toast("Erro ao remover", "danger"); }
+}
+
+// ═════════════════════════ EMOJI MAP ════════════════════
+
+let emojiMapData = [];
+
+async function fetchEmojiMap() {
+  try {
+    const r = await fetch("/api/emoji");
+    emojiMapData = await r.json();
+  } catch {
+    emojiMapData = [];
+  }
+}
+
+function renderEmojiMap() {
+  const container = document.getElementById("emoji-map-list");
+  if (!container) return;
+
+  if (emojiMapData.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:24px 0;color:var(--text-muted);font-size:.84rem;">
+        <i class="fas fa-fire" style="font-size:1.6rem;opacity:.2;display:block;margin-bottom:10px;"></i>
+        Nenhum emoji animado registrado ainda.<br>Envie emojis animados ao bot via DM para registrar automaticamente.
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      ${emojiMapData.map(e => `
+        <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.05);
+             border:1px solid var(--border);border-radius:8px;padding:6px 10px;">
+          <span style="font-size:1.4rem;line-height:1;">${e.char}</span>
+          <span style="font-family:monospace;font-size:.7rem;color:var(--text-muted);max-width:90px;
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(e.id)}">${esc(e.id)}</span>
+          <button class="btn btn-icon btn-outline-danger" style="width:22px;height:22px;font-size:.65rem;"
+                  onclick="deleteEmoji('${esc(e.char)}')" title="Remover">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>`).join("")}
+    </div>`;
+}
+
+async function deleteEmoji(char) {
+  if (!confirm(`Remover o emoji ${char} do mapeamento?`)) return;
+  const r = await fetch("/api/emoji", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ char }),
+  });
+  if (r.ok) {
+    await fetchEmojiMap();
+    renderEmojiMap();
+    toast("Emoji removido", "success");
+  } else {
+    toast("Erro ao remover emoji", "danger");
+  }
+}
+
+function openEmojiAddModal() {
+  document.getElementById("emoji-f-char").value = "";
+  document.getElementById("emoji-f-id").value   = "";
+  bootstrap.Modal.getOrCreateInstance(document.getElementById("emojiModal")).show();
+}
+
+async function saveEmojiManual() {
+  const char     = document.getElementById("emoji-f-char").value.trim();
+  const emoji_id = document.getElementById("emoji-f-id").value.trim();
+  if (!char) { toast("Cole o emoji no campo", "danger"); return; }
+  if (!emoji_id) { toast("Informe o custom_emoji_id", "danger"); return; }
+
+  const r = await fetch("/api/emoji", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ char, id: emoji_id }),
+  });
+  if (r.ok) {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("emojiModal")).hide();
+    await fetchEmojiMap();
+    renderEmojiMap();
+    toast("Emoji registrado!", "success");
+  } else {
+    const d = await r.json().catch(() => ({}));
+    toast(d.error || "Erro ao salvar", "danger");
+  }
 }
 
 // ─── Start ────────────────────────────────────────────────

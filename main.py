@@ -97,6 +97,7 @@ class BotManager:
                 timezone=config.get("timezone", "America/Sao_Paulo")
             )
             bot_module.setup_scheduler(scheduler, app.bot, config)
+            bot_module.setup_handlers(app)
             scheduler.start()
 
             await app.initialize()

@@ -15,8 +15,9 @@ logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 _DATA = Path(os.getenv("DATA_DIR", "."))
-_CONFIG_FILE = _DATA / "config.json"
-_MESSAGES_FILE = _DATA / "messages.json"
+_CONFIG_FILE    = _DATA / "config.json"
+_MESSAGES_FILE  = _DATA / "messages.json"
+_EMOJI_MAP_FILE = _DATA / "emoji_map.json"
 
 _pool = None
 
@@ -95,8 +96,12 @@ def init_db() -> None:
                 buttons    JSONB   NOT NULL DEFAULT '[]',
                 active     BOOLEAN DEFAULT TRUE
             );
+            CREATE TABLE IF NOT EXISTS emoji_map (
+                emoji_char      TEXT PRIMARY KEY,
+                custom_emoji_id TEXT NOT NULL
+            );
         """)
-        # Migration: add parse_mode to existing deployments that lack it
+        # Migrations: add columns that may not exist in older deployments
         cur.execute(
             "ALTER TABLE messages ADD COLUMN IF NOT EXISTS parse_mode TEXT DEFAULT 'HTML'"
         )
@@ -298,6 +303,53 @@ def delete_message(message_id: str) -> None:
         return
     with _conn() as c:
         c.cursor().execute("DELETE FROM messages WHERE id=%s", (message_id,))
+
+
+# ── Emoji Map ─────────────────────────────────────────────────────────────────
+
+def load_emoji_map() -> dict:
+    """Retorna {emoji_char: custom_emoji_id} com os emojis animados registrados."""
+    if not use_postgres():
+        if not _EMOJI_MAP_FILE.exists():
+            return {}
+        try:
+            return json.loads(_EMOJI_MAP_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    with _conn() as c:
+        cur = c.cursor()
+        cur.execute("SELECT emoji_char, custom_emoji_id FROM emoji_map ORDER BY emoji_char")
+        return {r[0]: r[1] for r in cur.fetchall()}
+
+
+def save_emoji(emoji_char: str, custom_emoji_id: str) -> None:
+    """Registra ou atualiza o mapeamento emoji_char → custom_emoji_id."""
+    if not use_postgres():
+        data = load_emoji_map()
+        data[emoji_char] = custom_emoji_id
+        _EMOJI_MAP_FILE.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return
+    with _conn() as c:
+        c.cursor().execute(
+            "INSERT INTO emoji_map(emoji_char, custom_emoji_id) VALUES(%s,%s) "
+            "ON CONFLICT(emoji_char) DO UPDATE SET custom_emoji_id=EXCLUDED.custom_emoji_id",
+            (emoji_char, custom_emoji_id),
+        )
+
+
+def delete_emoji(emoji_char: str) -> None:
+    """Remove um mapeamento de emoji animado."""
+    if not use_postgres():
+        data = load_emoji_map()
+        data.pop(emoji_char, None)
+        _EMOJI_MAP_FILE.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return
+    with _conn() as c:
+        c.cursor().execute("DELETE FROM emoji_map WHERE emoji_char=%s", (emoji_char,))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

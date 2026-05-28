@@ -297,6 +297,32 @@ def create_app() -> Flask:
 
         return jsonify({"results": results})
 
+    # ── Emoji Map ─────────────────────────────────────────────────────────────
+
+    @app.route("/api/emoji", methods=["GET"])
+    def get_emoji_map():
+        data = _db.load_emoji_map()
+        return jsonify([{"char": k, "id": v} for k, v in sorted(data.items())])
+
+    @app.route("/api/emoji", methods=["POST"])
+    def add_emoji():
+        body = request.get_json(force=True) or {}
+        char     = body.get("char", "").strip()
+        emoji_id = body.get("id", "").strip()
+        if not char or not emoji_id:
+            return jsonify({"error": "char e id são obrigatórios"}), 400
+        _db.save_emoji(char, emoji_id)
+        return jsonify({"char": char, "id": emoji_id}), 201
+
+    @app.route("/api/emoji", methods=["DELETE"])
+    def del_emoji():
+        body = request.get_json(force=True) or {}
+        char = body.get("char", "")
+        if not char:
+            return jsonify({"error": "char obrigatório"}), 400
+        _db.delete_emoji(char)
+        return jsonify({"success": True})
+
     # ── Dashboard ─────────────────────────────────────────────────────────────
 
     @app.route("/")

@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -50,6 +51,113 @@ def build_keyboard(button_keys: list, config: dict) -> Optional[InlineKeyboardMa
     return InlineKeyboardMarkup(rows)
 
 
+# ── Pré-processamento de emojis animados ──────────────────────────────────────
+
+def preprocess_animated_emoji(text: str, emoji_map: dict) -> str:
+    """Substitui chars de emoji conhecidos pelo wrapper <tg-emoji emoji-id="...">emoji</tg-emoji>.
+
+    - Só opera em partes de texto puro (não dentro de tags HTML existentes).
+    - Emojis já envolvidos por <tg-emoji> não são re-processados.
+    - Emojis mais longos (multi-codepoint) têm prioridade na substituição.
+    """
+    if not emoji_map or not text:
+        return text
+
+    # Divide o texto em pedaços: tags HTML e conteúdo entre elas
+    parts = re.split(r'(<[^>]+>)', text)
+    result = []
+    in_tg_emoji = 0  # profundidade dentro de <tg-emoji>...</tg-emoji>
+
+    for part in parts:
+        if part.startswith('<'):
+            result.append(part)
+            if re.match(r'<tg-emoji', part, re.IGNORECASE):
+                in_tg_emoji += 1
+            elif re.match(r'</tg-emoji', part, re.IGNORECASE):
+                in_tg_emoji = max(0, in_tg_emoji - 1)
+        else:
+            if in_tg_emoji > 0:
+                # Dentro de um bloco <tg-emoji> existente — não modificar
+                result.append(part)
+            else:
+                # Texto livre: substituir emojis conhecidos (maior comprimento primeiro)
+                for emoji_char in sorted(emoji_map, key=len, reverse=True):
+                    if emoji_char in part:
+                        emoji_id = emoji_map[emoji_char]
+                        part = part.replace(
+                            emoji_char,
+                            f'<tg-emoji emoji-id="{emoji_id}">{emoji_char}</tg-emoji>',
+                        )
+                result.append(part)
+
+    return "".join(result)
+
+
+# ── Handler de registro automático de emojis animados ────────────────────────
+
+async def cmd_start(update, context) -> None:
+    await update.message.reply_text(
+        "🤖 <b>Bot Manager ativo!</b>\n\n"
+        "Para registrar emojis animados, envie uma mensagem aqui contendo "
+        "os emojis animados que deseja usar nas mensagens agendadas.\n\n"
+        "O sistema extrai o ID automaticamente via API do Telegram e salva o mapeamento. "
+        "Depois é só usar o emoji normalmente no dashboard — ele será animado no envio! 🔥💎🚀",
+        parse_mode="HTML",
+    )
+
+
+async def handle_emoji_registration(update, context) -> None:
+    """Detecta custom_emoji entities em mensagens privadas e persiste o mapeamento."""
+    import db as _db
+
+    msg = update.message
+    if not msg:
+        return
+
+    text = msg.text or msg.caption or ""
+    entities = list(msg.entities or []) + list(msg.caption_entities or [])
+    custom_entities = [e for e in entities if e.type == "custom_emoji"]
+
+    if not custom_entities:
+        # Não responde a mensagens sem emoji animado para não ser intrusivo
+        return
+
+    registered = []
+    for entity in custom_entities:
+        emoji_char = text[entity.offset: entity.offset + entity.length]
+        emoji_id = entity.custom_emoji_id
+        if emoji_char and emoji_id:
+            _db.save_emoji(emoji_char, emoji_id)
+            if emoji_char not in registered:
+                registered.append(emoji_char)
+
+    if registered:
+        await msg.reply_text(
+            f"✅ <b>{len(registered)} emoji(s) animado(s) registrado(s):</b> "
+            + " ".join(registered)
+            + "\n\nUse-os normalmente no dashboard — o sistema aplica o ID automaticamente!",
+            parse_mode="HTML",
+        )
+    else:
+        await msg.reply_text("⚠️ Não foi possível extrair os IDs dos emojis.")
+
+
+def setup_handlers(app) -> None:
+    """Registra handlers de comandos e mensagens no Application do Telegram."""
+    from telegram.ext import MessageHandler, CommandHandler
+    from telegram.ext import filters as tg_filters
+
+    app.add_handler(CommandHandler("start", cmd_start))
+    # Captura qualquer mensagem privada (texto ou legenda de foto) que não seja comando
+    app.add_handler(MessageHandler(
+        tg_filters.ChatType.PRIVATE & ~tg_filters.COMMAND,
+        handle_emoji_registration,
+    ))
+    logger.info("Handlers de registro de emojis configurados")
+
+
+# ── Envio de mensagem agendada ────────────────────────────────────────────────
+
 async def send_scheduled_message(
     bot: Bot,
     text: str,
@@ -60,16 +168,24 @@ async def send_scheduled_message(
     message_name: str,
     parse_mode: Optional[str] = "HTML",
 ) -> None:
-    """Envia uma mensagem agendada para o chat_id.
+    """Envia uma mensagem agendada.
 
-    parse_mode pode ser "HTML", "MarkdownV2" ou None/"none" (sem formatação).
-    Para usar emojis animados do Telegram em modo HTML, utilize a tag:
-        <tg-emoji emoji-id="ID_DO_EMOJI">🔥</tg-emoji>
+    Em modo HTML, emojis animados registrados são automaticamente envolvidos
+    com <tg-emoji emoji-id="..."> antes do envio.
     """
     try:
-        keyboard = build_keyboard(button_keys, config)
-        # Normaliza: "none" ou vazio → None (sem parse_mode)
+        # Normaliza parse_mode: "none"/vazio → None
         pm = parse_mode if parse_mode and parse_mode.lower() not in ("none", "") else None
+
+        # Pré-processa emojis animados (apenas no modo HTML)
+        if pm and pm.upper() == "HTML":
+            import db as _db
+            emoji_map = _db.load_emoji_map()
+            if emoji_map:
+                text = preprocess_animated_emoji(text, emoji_map)
+
+        keyboard = build_keyboard(button_keys, config)
+
         if image:
             await bot.send_photo(
                 chat_id=chat_id,
