@@ -570,9 +570,12 @@ _COMPRA_EMOJI_MAP: dict = {
 
 def seed_emoji_defaults() -> None:
     """Garante que os emojis animados do pack COMPRA estejam registrados."""
-    for char, emoji_id in _COMPRA_EMOJI_MAP.items():
-        save_emoji(char, emoji_id)
-    logger.info("Emojis padrão COMPRA aplicados (%d letras)", len(_COMPRA_EMOJI_MAP))
+    try:
+        for char, emoji_id in _COMPRA_EMOJI_MAP.items():
+            save_emoji(char, emoji_id)
+        logger.info("Emojis padrão COMPRA aplicados (%d letras)", len(_COMPRA_EMOJI_MAP))
+    except Exception as exc:
+        logger.warning("Não foi possível aplicar emojis padrão (não crítico): %s", exc)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

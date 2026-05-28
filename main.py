@@ -199,9 +199,27 @@ async def run() -> None:
 
     # ── Iniciar todos os bots ativos ───────────────────────────────────────
 
+    started: list = []
     for bot_cfg in config.get("bots", []):
-        if bot_cfg.get("active") and _is_valid_token(bot_cfg.get("token", "")):
-            await manager.start_bot(bot_cfg["id"], bot_cfg["token"], config)
+        if not bot_cfg.get("active"):
+            continue
+        token = bot_cfg.get("token", "")
+        # Fallback: se o token salvo é placeholder, tenta a variável de ambiente
+        if not _is_valid_token(token):
+            token = config.get("bot_token", "")
+        if _is_valid_token(token):
+            await manager.start_bot(bot_cfg["id"], token, config)
+            started.append(bot_cfg["id"])
+
+    # Último recurso: nenhum bot iniciado → tenta o bot_token global da config
+    if not started:
+        fallback_token = config.get("bot_token", "")
+        if _is_valid_token(fallback_token):
+            logger.warning(
+                "Nenhum bot ativo encontrado na lista — iniciando bot de fallback "
+                "com token global (bot_token)."
+            )
+            await manager.start_bot("default", fallback_token, config)
 
     try:
         await asyncio.Event().wait()
