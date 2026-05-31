@@ -469,6 +469,7 @@ def create_app() -> Flask:
                     bot, message["text"], group["id"],
                     button_keys, cfg, message.get("image"), message.get("name", ""),
                     message.get("parse_mode", "HTML"),
+                    message.get("video_note"),
                 ),
                 _loop,
             )
