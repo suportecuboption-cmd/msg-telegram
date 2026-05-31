@@ -404,7 +404,9 @@ def create_app() -> Flask:
         return jsonify(data)
 
     # ── Upload de imagem ──────────────────────────────────────────────────────
-    _ALLOWED_IMG = {"jpg", "jpeg", "png", "gif", "webp", "mp4", "mov", "webm"}
+    _ALLOWED_IMG   = {"jpg", "jpeg", "png", "gif", "webp"}
+    _ALLOWED_VIDEO = {"mp4", "mov", "webm", "avi", "mkv"}
+    _ALLOWED_UPLOAD = _ALLOWED_IMG | _ALLOWED_VIDEO
 
     @app.route("/api/upload", methods=["POST"])
     @login_required
@@ -413,7 +415,7 @@ def create_app() -> Flask:
         if not f or not f.filename:
             return jsonify({"error": "Nenhum arquivo"}), 400
         ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else ""
-        if ext not in _ALLOWED_IMG:
+        if ext not in _ALLOWED_UPLOAD:
             return jsonify({"error": "Tipo não permitido"}), 400
         filename = f"{uuid.uuid4().hex[:16]}.{ext}"
         upload_dir = Path("static") / "uploads"

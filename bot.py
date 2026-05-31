@@ -190,14 +190,27 @@ async def send_scheduled_message(
     com <tg-emoji emoji-id="..."> antes do envio.
     """
     try:
+        # Detecta vídeo salvo por engano no campo image
+        _VIDEO_EXTS = (".mp4", ".mov", ".webm", ".avi", ".mkv")
+        if not video_note and image and not image.startswith("http") \
+                and image.lower().endswith(_VIDEO_EXTS):
+            video_note = image
+            image = None
+
         # Vídeo bolinha — enviado diretamente, sem legenda nem botões
         if video_note:
             try:
                 with open(video_note, "rb") as vf:
-                    await bot.send_video_note(chat_id=chat_id, video_note=vf)
+                    await bot.send_video_note(
+                        chat_id=chat_id,
+                        video_note=vf,
+                        length=480,   # diâmetro em pixels — obrigatório para exibir como bolinha
+                    )
                 logger.info("Vídeo bolinha '%s' enviado para %s", message_name, chat_id)
             except OSError:
-                logger.warning("Arquivo de vídeo bolinha não encontrado: %s", video_note)
+                logger.warning("Arquivo de vídeo não encontrado: %s", video_note)
+            except Exception as exc:
+                logger.error("Erro ao enviar vídeo bolinha '%s': %s", video_note, exc)
             return
 
         # Normaliza parse_mode: "none"/vazio → None
