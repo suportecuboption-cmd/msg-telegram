@@ -228,25 +228,39 @@ async def send_scheduled_message(
             video_note = image
             image = None
 
-        # Vídeo bolinha — converte para quadrado e envia via send_video_note
+        # Vídeo bolinha — usa file_id em cache ou converte e envia o arquivo
         if video_note:
-            vid_path, converted = _prepare_video_note(video_note)
+            # Se já temos o file_id do Telegram, reutiliza diretamente (sem ffmpeg)
+            file_id = None
+            if video_note.startswith("file_id:"):
+                file_id = video_note[len("file_id:"):]
+
             try:
-                with open(vid_path, "rb") as vf:
-                    await bot.send_video_note(
-                        chat_id=chat_id,
-                        video_note=vf,
-                        length=480,
+                if file_id:
+                    msg = await bot.send_video_note(
+                        chat_id=chat_id, video_note=file_id, length=480
                     )
+                else:
+                    vid_path, converted = _prepare_video_note(video_note)
+                    try:
+                        with open(vid_path, "rb") as vf:
+                            msg = await bot.send_video_note(
+                                chat_id=chat_id, video_note=vf, length=480
+                            )
+                        # Persiste o file_id para envios futuros (evita reconversão)
+                        if hasattr(msg, "video_note") and msg.video_note:
+                            import db as _db
+                            _db.set_video_note_file_id(video_note, msg.video_note.file_id)
+                            logger.info("file_id do vídeo bolinha salvo para reuso")
+                    finally:
+                        if converted:
+                            try: os.unlink(vid_path)
+                            except OSError: pass
                 logger.info("Vídeo bolinha '%s' enviado para %s", message_name, chat_id)
             except FileNotFoundError:
                 logger.warning("Arquivo de vídeo não encontrado: %s", video_note)
             except Exception as exc:
                 logger.error("Erro ao enviar vídeo bolinha '%s': %s", video_note, exc)
-            finally:
-                if converted:
-                    try: os.unlink(vid_path)
-                    except OSError: pass
             return
 
         # Normaliza parse_mode: "none"/vazio → None

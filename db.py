@@ -346,6 +346,27 @@ def upsert_message(msg: dict) -> dict:
     return msg
 
 
+def set_video_note_file_id(local_path: str, file_id: str) -> None:
+    """Substitui o caminho local pelo file_id do Telegram no campo video_note
+    de todas as mensagens que apontam para esse arquivo."""
+    new_value = f"file_id:{file_id}"
+    if not use_postgres():
+        data = load_messages()
+        changed = False
+        for msg in data["messages"]:
+            if msg.get("video_note") == local_path:
+                msg["video_note"] = new_value
+                changed = True
+        if changed:
+            save_messages(data)
+        return
+    with _conn() as c:
+        c.cursor().execute(
+            "UPDATE messages SET video_note=%s WHERE video_note=%s",
+            (new_value, local_path)
+        )
+
+
 def delete_message(message_id: str) -> None:
     if not use_postgres():
         data = load_messages()
