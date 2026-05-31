@@ -90,6 +90,7 @@ def init_db() -> None:
                 name       TEXT    NOT NULL,
                 text       TEXT    NOT NULL DEFAULT '',
                 image      TEXT,
+                video_note TEXT,
                 active     BOOLEAN DEFAULT TRUE,
                 parse_mode TEXT    DEFAULT 'HTML'
             );
@@ -117,6 +118,9 @@ def init_db() -> None:
         # Migrations: add columns that may not exist in older deployments
         cur.execute(
             "ALTER TABLE messages ADD COLUMN IF NOT EXISTS parse_mode TEXT DEFAULT 'HTML'"
+        )
+        cur.execute(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS video_note TEXT"
         )
     logger.info("Banco de dados PostgreSQL pronto")
 
@@ -261,9 +265,9 @@ def load_messages() -> dict:
 
     with _conn() as c:
         cur = c.cursor()
-        cur.execute("SELECT id, name, text, image, active, parse_mode FROM messages ORDER BY name")
+        cur.execute("SELECT id, name, text, image, video_note, active, parse_mode FROM messages ORDER BY name")
         msgs = []
-        for mid, name, text, image, active, parse_mode in cur.fetchall():
+        for mid, name, text, image, video_note, active, parse_mode in cur.fetchall():
             cur.execute(
                 "SELECT id, group_key, time, days, buttons, active "
                 "FROM schedules WHERE message_id=%s ORDER BY time",
@@ -275,8 +279,8 @@ def load_messages() -> dict:
                 for r in cur.fetchall()
             ]
             msgs.append({"id": mid, "name": name, "text": text, "image": image,
-                          "active": active, "parse_mode": parse_mode or "HTML",
-                          "schedules": schedules})
+                          "video_note": video_note, "active": active,
+                          "parse_mode": parse_mode or "HTML", "schedules": schedules})
     return {"messages": msgs}
 
 
@@ -291,10 +295,10 @@ def save_messages(data: dict) -> None:
         cur.execute("DELETE FROM messages")
         for msg in data.get("messages", []):
             cur.execute(
-                "INSERT INTO messages(id,name,text,image,active,parse_mode) VALUES(%s,%s,%s,%s,%s,%s)",
+                "INSERT INTO messages(id,name,text,image,video_note,active,parse_mode) VALUES(%s,%s,%s,%s,%s,%s,%s)",
                 (msg["id"], msg.get("name",""), msg.get("text",""),
-                 msg.get("image"), msg.get("active", True),
-                 msg.get("parse_mode", "HTML"))
+                 msg.get("image"), msg.get("video_note"),
+                 msg.get("active", True), msg.get("parse_mode", "HTML"))
             )
             for s in msg.get("schedules", []):
                 cur.execute(
@@ -321,12 +325,13 @@ def upsert_message(msg: dict) -> dict:
     with _conn() as c:
         cur = c.cursor()
         cur.execute(
-            "INSERT INTO messages(id,name,text,image,active,parse_mode) VALUES(%s,%s,%s,%s,%s,%s) "
+            "INSERT INTO messages(id,name,text,image,video_note,active,parse_mode) VALUES(%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, text=EXCLUDED.text, "
-            "image=EXCLUDED.image, active=EXCLUDED.active, parse_mode=EXCLUDED.parse_mode",
+            "image=EXCLUDED.image, video_note=EXCLUDED.video_note, "
+            "active=EXCLUDED.active, parse_mode=EXCLUDED.parse_mode",
             (msg["id"], msg.get("name",""), msg.get("text",""),
-             msg.get("image"), msg.get("active", True),
-             msg.get("parse_mode", "HTML"))
+             msg.get("image"), msg.get("video_note"),
+             msg.get("active", True), msg.get("parse_mode", "HTML"))
         )
         cur.execute("DELETE FROM schedules WHERE message_id=%s", (msg["id"],))
         for s in msg.get("schedules", []):

@@ -1,0 +1,12 @@
+.git/
+.claude/
+.gitignore
+.dockerignore
+config.json
+bot.log
+*.log
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+preview_server.py

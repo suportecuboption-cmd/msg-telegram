@@ -201,6 +201,153 @@
       .modal-dialog { margin: 10px; max-width: calc(100vw - 20px); }
       .modal-dialog.modal-xl { max-width: calc(100vw - 20px); }
     }
+
+    /* ── Telegram Preview ── */
+    .tg-preview-outer {
+      background: #0e1621;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.07);
+      display: flex;
+      flex-direction: column;
+      min-height: 360px;
+      max-height: 500px;
+    }
+    .tg-preview-topbar {
+      background: #17212b;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    }
+    .tg-preview-avatar {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: linear-gradient(135deg, #2196f3, #0d47a1);
+      display: flex; align-items: center; justify-content: center;
+      font-size: .65rem; color: white; flex-shrink: 0; font-weight: 700;
+    }
+    .tg-preview-chatinfo { flex: 1; min-width: 0; }
+    .tg-preview-chatname { font-size: .8rem; font-weight: 600; color: white; }
+    .tg-preview-chatstatus { font-size: .68rem; color: #5ac8fa; }
+    .tg-preview-body {
+      padding: 10px;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+    /* mensagem do bot = lado esquerdo, como no grupo do Telegram */
+    .tg-bubble-row { display: flex; justify-content: flex-start; align-items: flex-end; gap: 6px; }
+    .tg-bubble-avatar {
+      width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+      background: linear-gradient(135deg, #2196f3, #0d47a1);
+      display: flex; align-items: center; justify-content: center;
+      font-size: .6rem; color: white; font-weight: 700;
+    }
+    .tg-bubble-wrap { display: flex; flex-direction: column; max-width: 88%; }
+    .tg-bubble-sender { font-size: .72rem; color: #5ac8fa; font-weight: 600; margin-bottom: 2px; padding-left: 2px; }
+    .tg-bubble {
+      background: #182533;
+      border-radius: 2px 12px 12px 12px;
+      padding: 8px 11px 6px;
+      color: #e8e8e8;
+      font-size: .82rem;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+    .tg-bubble img.tg-preview-img {
+      width: 100%; border-radius: 7px; margin-bottom: 6px;
+      display: block; max-height: 180px; object-fit: cover;
+    }
+    .tg-bubble a { color: #5ac8fa; text-decoration: none; }
+    .tg-bubble code { background: rgba(0,0,0,.35); padding: 1px 4px; border-radius: 3px; font-size: .78rem; font-family: monospace; }
+    .tg-bubble b, .tg-bubble strong { color: #fff; }
+    .tg-bubble-footer {
+      display: flex; align-items: center; justify-content: flex-end;
+      gap: 4px; margin-top: 4px;
+    }
+    .tg-bubble-time { font-size: .64rem; color: rgba(255,255,255,.35); }
+    .tg-inline-btns { margin-top: 4px; display: flex; flex-direction: row; flex-wrap: wrap; gap: 3px; }
+    .tg-inline-btn {
+      flex: 1 1 calc(50% - 2px); min-width: 0;
+      background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+      border-radius: 6px; padding: 5px 8px; font-size: .75rem;
+      color: #5ac8fa; text-align: center; cursor: default;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .tg-preview-empty {
+      text-align: center; color: rgba(255,255,255,.15); font-size: .8rem;
+      padding: 30px 10px; flex: 1;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 8px;
+    }
+    .tg-preview-empty i { font-size: 1.8rem; opacity: .5; }
+
+    /* ── Upload de imagem ── */
+    .img-upload-zone {
+      border: 1.5px dashed rgba(255,255,255,.15); border-radius: 8px;
+      padding: 18px 12px; cursor: pointer; text-align: center;
+      transition: border-color .2s, background .2s; position: relative;
+    }
+    .img-upload-zone:hover { border-color: var(--accent); background: rgba(124,58,237,.06); }
+    .img-upload-zone.has-img { border-style: solid; border-color: rgba(124,58,237,.4); padding: 6px; }
+    .img-upload-zone img { width: 100%; max-height: 130px; object-fit: cover; border-radius: 6px; display: block; }
+    .img-remove-btn {
+      position: absolute; top: 6px; right: 6px;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: rgba(0,0,0,.65); border: none; color: white;
+      font-size: .6rem; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; z-index: 2;
+    }
+    .img-remove-btn:hover { background: var(--danger); }
+    .img-divider { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+    .img-divider::before, .img-divider::after { content:''; flex:1; height:1px; background:var(--border); }
+    .img-divider span { font-size: .72rem; color: var(--text-muted); }
+
+    /* ── Tipo de mensagem (tabs) ── */
+    .msg-type-tabs { display: flex; gap: 4px; margin-bottom: 14px; }
+    .msg-type-tab {
+      flex: 1; padding: 6px 8px; border-radius: 8px;
+      border: 1px solid var(--border); background: transparent;
+      color: rgba(255,255,255,.45); font-size: .78rem;
+      cursor: pointer; text-align: center; transition: all .15s;
+    }
+    .msg-type-tab.active { background: rgba(124,58,237,.2); border-color: var(--accent); color: #c4b5fd; }
+
+    /* ── Upload de vídeo bolinha ── */
+    .vidnote-upload-zone {
+      border: 1.5px dashed rgba(255,255,255,.15); border-radius: 8px;
+      padding: 22px 12px; cursor: pointer; text-align: center;
+      transition: border-color .2s, background .2s;
+    }
+    .vidnote-upload-zone:hover { border-color: var(--accent); background: rgba(124,58,237,.06); }
+    .vidnote-upload-zone.has-video { border-style: solid; border-color: rgba(124,58,237,.4); padding: 14px; }
+
+    /* ── Preview vídeo bolinha no Telegram ── */
+    .tg-vidnote-row { display: flex; justify-content: flex-start; align-items: flex-end; gap: 6px; }
+    .tg-vidnote-circle {
+      width: 96px; height: 96px; border-radius: 50%;
+      background: linear-gradient(135deg, #1a3040, #17212b);
+      border: 2px solid rgba(255,255,255,.1);
+      display: flex; align-items: center; justify-content: center;
+      position: relative; overflow: hidden; flex-shrink: 0;
+    }
+    .tg-vidnote-circle video {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    .tg-vidnote-play {
+      position: absolute;
+      width: 32px; height: 32px; border-radius: 50%;
+      background: rgba(0,0,0,.55);
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-size: .85rem;
+    }
+    .tg-vidnote-meta { display: flex; flex-direction: column; gap: 2px; }
+    .tg-vidnote-time { font-size: .62rem; color: rgba(255,255,255,.35); }
   </style>
 </head>
 <body>
@@ -550,14 +697,22 @@
         <div class="row g-4">
 
           <!-- Coluna esquerda: conteúdo -->
-          <div class="col-lg-5">
+          <div class="col-lg-4">
             <div class="section-label">Conteúdo da Mensagem</div>
+
+            <!-- Abas de tipo -->
+            <div class="msg-type-tabs">
+              <button class="msg-type-tab active" id="tab-text" onclick="setMsgType('text')">📝 Texto / Foto</button>
+              <button class="msg-type-tab" id="tab-video_note" onclick="setMsgType('video_note')">🔵 Vídeo Bolinha</button>
+            </div>
 
             <div class="mb-3">
               <label class="form-label">Nome interno</label>
               <input type="text" class="form-control" id="f-name" placeholder="Ex: Abertura de mercado">
             </div>
 
+            <!-- Área texto/foto (padrão) -->
+            <div id="msg-text-area">
             <div class="mb-3">
               <div class="d-flex align-items-center justify-content-between mb-1">
                 <label class="form-label mb-0">Texto</label>
@@ -582,9 +737,47 @@
             </div>
 
             <div class="mb-3">
-              <label class="form-label">URL da imagem <span style="color:var(--text-muted);font-size:.75rem;">(opcional)</span></label>
-              <input type="url" class="form-control" id="f-image" placeholder="https://...">
+              <label class="form-label">Imagem <span style="color:var(--text-muted);font-size:.75rem;">(opcional)</span></label>
+              <!-- Área de upload -->
+              <div class="img-upload-zone" id="img-zone" onclick="document.getElementById('f-image-file').click()">
+                <div id="img-zone-ph">
+                  <i class="fas fa-cloud-upload-alt" style="font-size:1.4rem;opacity:.3;display:block;margin-bottom:5px;"></i>
+                  <div style="font-size:.8rem;color:rgba(255,255,255,.35);">Clique para enviar do PC</div>
+                  <div style="font-size:.7rem;color:rgba(255,255,255,.2);margin-top:2px;">JPG · PNG · GIF · WEBP</div>
+                </div>
+                <img id="img-zone-thumb" style="display:none;">
+                <button type="button" class="img-remove-btn" id="img-remove-btn" style="display:none;" onclick="event.stopPropagation();clearImage()">
+                  <i class="fas fa-times"></i>
+                </button>
+              </div>
+              <input type="file" id="f-image-file" accept="image/*" style="display:none;">
+              <div id="img-upload-status" style="font-size:.72rem;margin-top:4px;display:none;"></div>
+              <!-- Ou URL -->
+              <div class="img-divider"><span>ou usar URL</span></div>
+              <input type="url" class="form-control" id="f-image" placeholder="https://..." style="font-size:.82rem;" oninput="onImageUrlInput()">
             </div>
+            </div><!-- fim #msg-text-area -->
+
+            <!-- Área vídeo bolinha -->
+            <div id="msg-vidnote-area" style="display:none;">
+              <div class="mb-3">
+                <label class="form-label">Vídeo <span style="color:var(--text-muted);font-size:.75rem;">MP4 · máx 1 min · quadrado</span></label>
+                <div class="vidnote-upload-zone" id="vidnote-zone" onclick="document.getElementById('f-vidnote-file').click()">
+                  <div id="vidnote-zone-ph">
+                    <i class="fas fa-circle-play" style="font-size:1.6rem;opacity:.3;display:block;margin-bottom:6px;"></i>
+                    <div style="font-size:.8rem;color:rgba(255,255,255,.35);">Clique para enviar vídeo do PC</div>
+                    <div style="font-size:.7rem;color:rgba(255,255,255,.2);margin-top:2px;">MP4 · MOV · WEBM</div>
+                  </div>
+                  <div id="vidnote-zone-info" style="display:none;text-align:center;">
+                    <i class="fas fa-circle-play" style="font-size:2rem;color:#5ac8fa;display:block;margin-bottom:4px;"></i>
+                    <div id="vidnote-zone-name" style="font-size:.75rem;color:rgba(255,255,255,.55);word-break:break-all;"></div>
+                  </div>
+                </div>
+                <input type="file" id="f-vidnote-file" accept="video/mp4,video/mov,video/webm,video/*" style="display:none;">
+                <input type="hidden" id="f-video-note">
+                <div id="vidnote-upload-status" style="font-size:.72rem;margin-top:4px;display:none;"></div>
+              </div>
+            </div><!-- fim #msg-vidnote-area -->
 
             <div class="form-check form-switch">
               <input class="form-check-input" type="checkbox" id="f-active" checked>
@@ -592,8 +785,29 @@
             </div>
           </div>
 
+          <!-- Coluna central: preview Telegram -->
+          <div class="col-lg-4">
+            <div class="section-label">Preview Telegram</div>
+            <div class="tg-preview-outer">
+              <div class="tg-preview-topbar">
+                <div class="tg-preview-avatar">B</div>
+                <div class="tg-preview-chatinfo">
+                  <div class="tg-preview-chatname">Bot</div>
+                  <div class="tg-preview-chatstatus">online</div>
+                </div>
+                <i class="fab fa-telegram" style="color:#5ac8fa;opacity:.7;font-size:.95rem;"></i>
+              </div>
+              <div class="tg-preview-body" id="tg-preview-body">
+                <div class="tg-preview-empty" id="tg-preview-empty">
+                  <i class="fas fa-eye"></i>
+                  <span>Preview aparece aqui enquanto você digita...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Coluna direita: agendamentos -->
-          <div class="col-lg-7">
+          <div class="col-lg-4">
             <div class="d-flex justify-content-between align-items-center mb-3">
               <div class="section-label mb-0">Agendamentos por Grupo</div>
               <button class="btn btn-xs btn-outline-primary" onclick="addSchedItem()">
@@ -764,6 +978,19 @@ async function init() {
   renderMsgList();
   checkStatus();
   setInterval(checkStatus, 30000);
+
+  // Attach live preview listeners once when modal opens
+  document.getElementById("msgModal").addEventListener("shown.bs.modal", () => {
+    const txt = document.getElementById("f-text");
+    if (!txt._previewBound) {
+      txt.addEventListener("input", updatePreview);
+      document.getElementById("f-image").addEventListener("input", updatePreview);
+      document.getElementById("f-parse-mode").addEventListener("change", updatePreview);
+      document.getElementById("scheds-container").addEventListener("change", updatePreview);
+      txt._previewBound = true;
+    }
+    updatePreview();
+  });
 }
 
 async function fetchConfig() {
@@ -854,6 +1081,10 @@ function openAdd() {
   document.getElementById("f-text").value  = "";
   document.getElementById("f-image").value = "";
   document.getElementById("f-active").checked = true;
+  _setImgZone(null);
+  document.getElementById("img-upload-status").style.display = "none";
+  _resetVidnote();
+  setMsgType("text");
   document.getElementById("f-parse-mode").value = "HTML";
   onParseModeChange();
   document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
@@ -870,6 +1101,25 @@ function openEdit(id) {
   document.getElementById("f-name").value  = msg.name  || "";
   document.getElementById("f-text").value  = msg.text  || "";
   document.getElementById("f-image").value = msg.image || "";
+  document.getElementById("img-upload-status").style.display = "none";
+  if (msg.image) {
+    const src = msg.image.startsWith("http") ? msg.image : "/" + msg.image;
+    _setImgZone(src);
+  } else {
+    _setImgZone(null);
+  }
+  _resetVidnote();
+  if (msg.video_note) {
+    const type = "video_note";
+    setMsgType(type);
+    document.getElementById("f-video-note").value = msg.video_note;
+    document.getElementById("vidnote-zone-ph").style.display   = "none";
+    document.getElementById("vidnote-zone-info").style.display = "";
+    document.getElementById("vidnote-zone-name").textContent   = msg.video_note.split("/").pop();
+    document.getElementById("vidnote-zone").classList.add("has-video");
+  } else {
+    setMsgType("text");
+  }
   document.getElementById("f-active").checked = msg.active !== false;
   document.getElementById("f-parse-mode").value = msg.parse_mode || "HTML";
   onParseModeChange();
@@ -959,6 +1209,7 @@ function toggleDay(el) {
 function checkEmpty() {
   const items = document.querySelectorAll("#scheds-container .sched-item");
   document.getElementById("scheds-empty").style.display = items.length === 0 ? "" : "none";
+  updatePreview();
 }
 
 function collectSchedules() {
@@ -977,13 +1228,19 @@ function collectSchedules() {
 }
 
 async function saveMessage() {
+  const isVidnote = _msgType === "video_note";
   const text = document.getElementById("f-text").value.trim();
-  if (!text) { toast("Digite o texto da mensagem", "danger"); return; }
+
+  if (!isVidnote && !text) { toast("Digite o texto da mensagem", "danger"); return; }
+  if (isVidnote && !document.getElementById("f-video-note").value) {
+    toast("Envie um vídeo bolinha antes de salvar", "danger"); return;
+  }
 
   const payload = {
     name:       document.getElementById("f-name").value.trim() || "Sem nome",
-    text,
-    image:      document.getElementById("f-image").value.trim() || null,
+    text:       isVidnote ? "" : text,
+    image:      isVidnote ? null : (document.getElementById("f-image").value.trim() || null),
+    video_note: isVidnote ? (document.getElementById("f-video-note").value || null) : null,
     active:     document.getElementById("f-active").checked,
     parse_mode: document.getElementById("f-parse-mode").value,
     schedules:  collectSchedules(),
@@ -1173,6 +1430,248 @@ async function saveConfig() {
   } else {
     toast("Erro ao salvar configurações", "danger");
   }
+}
+
+// ═════════════════════════ MSG TYPE TOGGLE ═══════════════
+
+let _msgType = "text";
+
+function setMsgType(type) {
+  _msgType = type;
+  document.getElementById("tab-text").classList.toggle("active", type === "text");
+  document.getElementById("tab-video_note").classList.toggle("active", type === "video_note");
+  document.getElementById("msg-text-area").style.display    = type === "text"       ? "" : "none";
+  document.getElementById("msg-vidnote-area").style.display = type === "video_note" ? "" : "none";
+  updatePreview();
+}
+
+// ═════════════════════════ IMAGE UPLOAD ══════════════════
+
+function _setImgZone(src) {
+  const zone  = document.getElementById("img-zone");
+  const ph    = document.getElementById("img-zone-ph");
+  const thumb = document.getElementById("img-zone-thumb");
+  const rmBtn = document.getElementById("img-remove-btn");
+  if (src) {
+    thumb.src = src; thumb.style.display = "";
+    ph.style.display = "none"; rmBtn.style.display = "";
+    zone.classList.add("has-img");
+  } else {
+    thumb.src = ""; thumb.style.display = "none";
+    ph.style.display = ""; rmBtn.style.display = "none";
+    zone.classList.remove("has-img");
+  }
+}
+
+function _resetVidnote() {
+  const el = document.getElementById("f-video-note");
+  el.value = ""; el.dataset.localUrl = "";
+  document.getElementById("vidnote-zone-ph").style.display   = "";
+  document.getElementById("vidnote-zone-info").style.display = "none";
+  document.getElementById("vidnote-zone").classList.remove("has-video");
+  document.getElementById("vidnote-upload-status").style.display = "none";
+}
+
+function clearImage() {
+  document.getElementById("f-image").value = "";
+  document.getElementById("img-upload-status").style.display = "none";
+  _setImgZone(null);
+  updatePreview();
+}
+
+function onImageUrlInput() {
+  const url = document.getElementById("f-image").value.trim();
+  _setImgZone(url || null);
+  updatePreview();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  // ── Upload de vídeo bolinha ──────────────────────────────
+  document.getElementById("f-vidnote-file").addEventListener("change", async function () {
+    const file = this.files[0];
+    if (!file) return;
+
+    // Mostra nome do arquivo imediatamente
+    document.getElementById("vidnote-zone-ph").style.display   = "none";
+    document.getElementById("vidnote-zone-info").style.display = "";
+    document.getElementById("vidnote-zone-name").textContent   = file.name;
+    document.getElementById("vidnote-zone").classList.add("has-video");
+
+    // Preview local via object URL
+    document.getElementById("f-video-note").dataset.localUrl = URL.createObjectURL(file);
+    updatePreview();
+
+    // Upload ao servidor
+    const status = document.getElementById("vidnote-upload-status");
+    status.style.display = ""; status.style.color = "rgba(255,255,255,.4)";
+    status.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Enviando vídeo...';
+
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r    = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await r.json();
+      if (r.ok) {
+        document.getElementById("f-video-note").value = data.path;
+        status.style.color   = "var(--success)";
+        status.innerHTML     = '<i class="fas fa-check me-1"></i>Vídeo enviado!';
+      } else {
+        status.style.color = "var(--danger)";
+        status.innerHTML   = '<i class="fas fa-times me-1"></i>' + (data.error || "Erro ao enviar");
+      }
+    } catch {
+      status.style.color = "var(--danger)";
+      status.innerHTML   = '<i class="fas fa-times me-1"></i>Erro de conexão';
+    }
+    this.value = "";
+  });
+
+  // ── Upload de imagem ──────────────────────────────────────
+  document.getElementById("f-image-file").addEventListener("change", async function () {
+    const file = this.files[0];
+    if (!file) return;
+
+    // Preview local imediato
+    const reader = new FileReader();
+    reader.onload = e => { _setImgZone(e.target.result); updatePreview(); };
+    reader.readAsDataURL(file);
+
+    // Upload ao servidor
+    const status = document.getElementById("img-upload-status");
+    status.style.display = ""; status.style.color = "rgba(255,255,255,.4)";
+    status.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Enviando...';
+
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r    = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await r.json();
+      if (r.ok) {
+        document.getElementById("f-image").value = data.path;
+        _setImgZone(data.url);
+        status.style.color = "var(--success)";
+        status.innerHTML   = '<i class="fas fa-check me-1"></i>Imagem enviada!';
+        updatePreview();
+      } else {
+        status.style.color = "var(--danger)";
+        status.innerHTML   = '<i class="fas fa-times me-1"></i>' + (data.error || "Erro ao enviar");
+      }
+    } catch {
+      status.style.color = "var(--danger)";
+      status.innerHTML   = '<i class="fas fa-times me-1"></i>Erro de conexão';
+    }
+    this.value = ""; // permite re-selecionar o mesmo arquivo
+  });
+});
+
+// ═════════════════════════ TELEGRAM PREVIEW ══════════════
+
+function updatePreview() {
+  const body    = document.getElementById("tg-preview-body");
+  const emptyEl = document.getElementById("tg-preview-empty");
+
+  // ── Preview vídeo bolinha ──
+  if (_msgType === "video_note") {
+    const vidEl   = document.getElementById("f-video-note");
+    const localUrl = vidEl?.dataset.localUrl || "";
+    const hasVideo = vidEl?.value || localUrl;
+    body.querySelector(".tg-bubble-row")?.remove();
+    body.querySelector(".tg-vidnote-row")?.remove();
+    if (!hasVideo) { if (emptyEl) emptyEl.style.display = ""; return; }
+    if (emptyEl) emptyEl.style.display = "none";
+    const now = new Date();
+    const timeStr = String(now.getHours()).padStart(2,"0") + ":" + String(now.getMinutes()).padStart(2,"0");
+    const row = document.createElement("div");
+    row.className = "tg-vidnote-row";
+    row.innerHTML = `
+      <div class="tg-bubble-avatar">B</div>
+      <div>
+        <div class="tg-vidnote-circle">
+          ${localUrl ? `<video src="${localUrl}" muted playsinline style="width:100%;height:100%;object-fit:cover;border-radius:50%;"></video>` : ""}
+          <div class="tg-vidnote-play"><i class="fas fa-play" style="margin-left:3px;"></i></div>
+        </div>
+        <div class="tg-vidnote-time" style="text-align:center;margin-top:3px;">${timeStr}</div>
+      </div>`;
+    body.appendChild(row);
+    return;
+  }
+
+  const text      = document.getElementById("f-text").value;
+  const thumb     = document.getElementById("img-zone-thumb");
+  const image     = (thumb && thumb.style.display !== "none" && thumb.src)
+                    ? thumb.src
+                    : document.getElementById("f-image").value.trim();
+  const parseMode = document.getElementById("f-parse-mode").value;
+  body.querySelector(".tg-vidnote-row")?.remove();
+
+  if (!text.trim() && !image) {
+    if (emptyEl) emptyEl.style.display = "";
+    const old = body.querySelector(".tg-bubble-row");
+    if (old) old.remove();
+    return;
+  }
+
+  if (emptyEl) emptyEl.style.display = "none";
+
+  let msgHtml = "";
+
+  if (image) {
+    const imgSrc = (image.startsWith("http") || image.startsWith("/") || image.startsWith("data:"))
+      ? image : "/" + image;
+    msgHtml += `<img class="tg-preview-img" src="${imgSrc.replace(/"/g, '&quot;')}" onerror="this.style.display='none'" onload="this.style.display='block'">`;
+  }
+
+  if (text.trim()) {
+    let rendered = text;
+    if (parseMode === "HTML") {
+      rendered = rendered.replace(/<tg-emoji[^>]*>([\s\S]*?)<\/tg-emoji>/g, '$1');
+      rendered = rendered.replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '');
+      rendered = rendered.replace(/\n/g, '<br>');
+    } else if (parseMode === "MarkdownV2") {
+      rendered = esc(text)
+        .replace(/\*\*([\s\S]*?)\*\*/g, '<b>$1</b>')
+        .replace(/__([\s\S]*?)__/g, '<i>$1</i>')
+        .replace(/`([^`]*)`/g, '<code>$1</code>')
+        .replace(/\n/g, '<br>');
+    } else {
+      rendered = esc(text).replace(/\n/g, '<br>');
+    }
+    msgHtml += rendered;
+  }
+
+  const now = new Date();
+  const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+
+  const seen = new Set();
+  const btnLabels = [];
+  document.querySelectorAll("#scheds-container .btn-check-input:checked").forEach(cb => {
+    const label = cb.closest(".form-check")?.querySelector("label")?.textContent?.trim();
+    if (label && !seen.has(label)) { seen.add(label); btnLabels.push(label); }
+  });
+
+  const btnsHtml = btnLabels.length > 0
+    ? `<div class="tg-inline-btns">${btnLabels.map(b => `<div class="tg-inline-btn">${esc(b)}</div>`).join('')}</div>`
+    : '';
+
+  let row = body.querySelector(".tg-bubble-row");
+  if (!row) {
+    row = document.createElement("div");
+    row.className = "tg-bubble-row";
+    body.appendChild(row);
+  }
+
+  row.innerHTML = `
+    <div class="tg-bubble-avatar">B</div>
+    <div class="tg-bubble-wrap">
+      <div class="tg-bubble-sender">Bot</div>
+      <div class="tg-bubble">
+        ${msgHtml}
+        <div class="tg-bubble-footer">
+          <span class="tg-bubble-time">${timeStr}</span>
+        </div>
+      </div>
+      ${btnsHtml}
+    </div>`;
 }
 
 // ═════════════════════════ UTILS ═════════════════════════

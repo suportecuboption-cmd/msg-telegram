@@ -6,6 +6,7 @@ import os
 import urllib.error
 import urllib.request
 import uuid
+from pathlib import Path
 from typing import Optional, Callable
 
 from flask import (Flask, jsonify, redirect, render_template,
@@ -401,6 +402,26 @@ def create_app() -> Flask:
         if _reload_callback:
             _reload_callback()
         return jsonify(data)
+
+    # ── Upload de imagem ──────────────────────────────────────────────────────
+    _ALLOWED_IMG = {"jpg", "jpeg", "png", "gif", "webp", "mp4", "mov", "webm"}
+
+    @app.route("/api/upload", methods=["POST"])
+    @login_required
+    def upload_image():
+        f = request.files.get("file")
+        if not f or not f.filename:
+            return jsonify({"error": "Nenhum arquivo"}), 400
+        ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else ""
+        if ext not in _ALLOWED_IMG:
+            return jsonify({"error": "Tipo não permitido"}), 400
+        filename = f"{uuid.uuid4().hex[:16]}.{ext}"
+        upload_dir = Path("static") / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        dest = upload_dir / filename
+        f.save(str(dest))
+        return jsonify({"path": str(dest).replace("\\", "/"),
+                        "url": f"/static/uploads/{filename}"})
 
     @app.route("/api/messages/<message_id>", methods=["DELETE"])
     @login_required
