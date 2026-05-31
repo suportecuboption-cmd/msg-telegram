@@ -14,12 +14,12 @@ COPY templates/ templates/
 COPY config.example.json ./
 COPY messages.json ./messages.default.json
 
-RUN mkdir -p /data /app/static/uploads
+RUN mkdir -p /data/uploads
 
 ENV DATA_DIR=/data
 
-# uploads persistidos via volume para sobreviver a reinicializações
-VOLUME ["/app/static/uploads"]
+# /data é o volume persistente do Railway (railway.toml). Uploads vão para
+# /data/uploads e sobrevivem a redeploys/reinicializações.
 
 EXPOSE 8080
 

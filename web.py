@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 
 import db as _db
 
+# Uploads ficam no volume persistente (DATA_DIR) para sobreviver a redeploys
+_DATA = Path(os.getenv("DATA_DIR", "."))
+_UPLOAD_DIR = _DATA / "uploads"
+
 _manager = None
 _loop: Optional[asyncio.AbstractEventLoop] = None
 _reload_callback: Optional[Callable] = None
@@ -436,12 +440,19 @@ def create_app() -> Flask:
         if ext not in _ALLOWED_UPLOAD:
             return jsonify({"error": "Tipo não permitido"}), 400
         filename = f"{uuid.uuid4().hex[:16]}.{ext}"
-        upload_dir = Path("static") / "uploads"
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        dest = upload_dir / filename
+        _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        dest = _UPLOAD_DIR / filename
         f.save(str(dest))
-        return jsonify({"path": str(dest).replace("\\", "/"),
-                        "url": f"/static/uploads/{filename}"})
+        # path: caminho absoluto que o bot abre diretamente do disco (volume /data)
+        # url:  rota servida pela web para preview no painel
+        return jsonify({"path": str(dest.resolve()).replace("\\", "/"),
+                        "url": f"/media/{filename}"})
+
+    @app.route("/media/<path:filename>")
+    @login_required
+    def serve_upload(filename):
+        from flask import send_from_directory
+        return send_from_directory(_UPLOAD_DIR.resolve(), filename)
 
     @app.route("/api/messages/<message_id>", methods=["DELETE"])
     @login_required

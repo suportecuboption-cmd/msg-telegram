@@ -1103,8 +1103,7 @@ function openEdit(id) {
   document.getElementById("f-image").value = msg.image || "";
   document.getElementById("img-upload-status").style.display = "none";
   if (msg.image) {
-    const src = msg.image.startsWith("http") ? msg.image : "/" + msg.image;
-    _setImgZone(src);
+    _setImgZone(_mediaUrl(msg.image));
   } else {
     _setImgZone(null);
   }
@@ -1461,6 +1460,13 @@ function _setImgZone(src) {
     ph.style.display = ""; rmBtn.style.display = "none";
     zone.classList.remove("has-img");
   }
+}
+
+function _mediaUrl(path) {
+  if (!path) return null;
+  if (path.startsWith("http") || path.startsWith("data:") || path.startsWith("/media/")) return path;
+  // deriva a rota /media/<arquivo> a partir do caminho salvo (absoluto ou relativo)
+  return "/media/" + path.split(/[\\/]/).pop();
 }
 
 function _resetVidnote() {

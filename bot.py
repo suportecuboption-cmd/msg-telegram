@@ -276,7 +276,7 @@ async def send_scheduled_message(
         keyboard = build_keyboard(button_keys, config)
 
         if image:
-            # Suporta tanto URL quanto arquivo local (static/uploads/...)
+            # Suporta tanto URL quanto arquivo local (DATA_DIR/uploads/...)
             if image.startswith("http://") or image.startswith("https://"):
                 photo_data = image
             else:
