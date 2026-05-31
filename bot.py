@@ -2,6 +2,8 @@ import json
 import logging
 import os
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -171,6 +173,35 @@ def setup_handlers(app) -> None:
     logger.info("Handlers de registro de emojis configurados")
 
 
+# ── Conversão para vídeo bolinha (formato quadrado) ──────────────────────────
+
+def _prepare_video_note(src: str) -> tuple[str, bool]:
+    """Converte o vídeo para MP4 quadrado usando ffmpeg.
+    Retorna (caminho, foi_convertido). Se ffmpeg não estiver disponível
+    ou falhar, devolve o arquivo original."""
+    try:
+        tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+        tmp.close()
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", src,
+                "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=480:480",
+                "-c:v", "libx264", "-preset", "fast",
+                "-c:a", "aac", "-movflags", "+faststart",
+                "-t", "60",          # garante máx 1 minuto
+                tmp.name,
+            ],
+            capture_output=True,
+            timeout=120,
+        )
+        if result.returncode == 0:
+            return tmp.name, True
+        os.unlink(tmp.name)
+    except Exception as exc:
+        logger.warning("ffmpeg não disponível ou falhou (%s) — enviando original", exc)
+    return src, False
+
+
 # ── Envio de mensagem agendada ────────────────────────────────────────────────
 
 async def send_scheduled_message(
@@ -197,20 +228,25 @@ async def send_scheduled_message(
             video_note = image
             image = None
 
-        # Vídeo bolinha — enviado diretamente, sem legenda nem botões
+        # Vídeo bolinha — converte para quadrado e envia via send_video_note
         if video_note:
+            vid_path, converted = _prepare_video_note(video_note)
             try:
-                with open(video_note, "rb") as vf:
+                with open(vid_path, "rb") as vf:
                     await bot.send_video_note(
                         chat_id=chat_id,
                         video_note=vf,
-                        length=480,   # diâmetro em pixels — obrigatório para exibir como bolinha
+                        length=480,
                     )
                 logger.info("Vídeo bolinha '%s' enviado para %s", message_name, chat_id)
-            except OSError:
+            except FileNotFoundError:
                 logger.warning("Arquivo de vídeo não encontrado: %s", video_note)
             except Exception as exc:
                 logger.error("Erro ao enviar vídeo bolinha '%s': %s", video_note, exc)
+            finally:
+                if converted:
+                    try: os.unlink(vid_path)
+                    except OSError: pass
             return
 
         # Normaliza parse_mode: "none"/vazio → None
