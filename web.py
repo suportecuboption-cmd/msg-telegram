@@ -58,6 +58,20 @@ def _ensure_schedule_ids(schedules: list) -> list:
             s["id"] = uuid.uuid4().hex[:8]
     return schedules
 
+_VIDEO_EXTS = (".mp4", ".mov", ".webm", ".avi", ".mkv")
+
+def _normalize_media(msg: dict) -> dict:
+    """Se um arquivo de vídeo foi salvo no campo image, move para video_note.
+    Garante que vídeos sempre sejam enviados como vídeo bolinha (send_video_note)
+    e nunca como foto/vídeo normal (send_photo)."""
+    img = msg.get("image")
+    if img and not str(img).startswith("http") \
+            and str(img).lower().endswith(_VIDEO_EXTS):
+        if not msg.get("video_note"):
+            msg["video_note"] = img
+        msg["image"] = None
+    return msg
+
 
 def _check_token(token: str) -> dict:
     if not token or token == "SEU_TOKEN_AQUI":
@@ -382,10 +396,12 @@ def create_app() -> Flask:
             "name":       data.get("name", "Nova Mensagem"),
             "text":       data.get("text", ""),
             "image":      data.get("image") or None,
+            "video_note": data.get("video_note") or None,
             "active":     data.get("active", True),
             "parse_mode": data.get("parse_mode", "HTML"),
             "schedules":  _ensure_schedule_ids(data.get("schedules", [])),
         }
+        _normalize_media(message)
         _db.upsert_message(message)
         if _reload_callback:
             _reload_callback()
@@ -397,7 +413,9 @@ def create_app() -> Flask:
         data = request.get_json(force=True)
         data["id"] = message_id
         data.setdefault("parse_mode", "HTML")
+        data["video_note"] = data.get("video_note") or None
         data["schedules"] = _ensure_schedule_ids(data.get("schedules", []))
+        _normalize_media(data)
         _db.upsert_message(data)
         if _reload_callback:
             _reload_callback()
