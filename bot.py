@@ -321,14 +321,18 @@ async def send_scheduled_message(
 
         # ── Verificação condicional pós-fechamento do candle ──────────────────
         if conditional_enabled and candle_hour:
+            logger.info(
+                "Condicional ATIVADO para '%s' | candle=%s | aguardando %ds...",
+                message_name, candle_hour, _CANDLE_CLOSE_WAIT,
+            )
             asyncio.create_task(
                 _check_and_send_conditional(
                     bot=bot,
                     chat_id=chat_id,
                     message_name=message_name,
                     candle_hour=candle_hour,
-                    conditional_win=conditional_win or {},
-                    conditional_loss=conditional_loss or {},
+                    conditional_win=conditional_win if isinstance(conditional_win, dict) else {},
+                    conditional_loss=conditional_loss if isinstance(conditional_loss, dict) else {},
                     button_keys=button_keys,
                     config=config,
                 )
@@ -358,52 +362,100 @@ async def _check_and_send_conditional(
 
     Fluxo:
       1. Dorme ``delay`` segundos (padrão 70 = 60s vela + 10s buffer).
-      2. Chama a API de candles.
+      2. Chama a API de candles (com retry após 30s se o candle ainda não apareceu).
       3. Localiza o candle de ``candle_hour`` (formato HH:MM).
       4. Envia a mensagem condicional correspondente (WIN ou LOSS) para ``chat_id``.
     """
+    logger.info("Condicional '%s': aguardando %ds para verificar candle %s",
+                message_name, delay, candle_hour)
     await asyncio.sleep(delay)
 
     def _fetch() -> dict:
         with urllib.request.urlopen(_CANDLES_API_URL, timeout=10) as resp:
             return json.loads(resp.read())
 
-    try:
-        data = await asyncio.to_thread(_fetch)
-    except Exception as exc:
-        logger.warning("Condicional '%s': falha na API de candles após %ds: %s",
-                       message_name, delay, exc)
-        return
+    result = None
 
-    candle_map: dict = {}
-    for c in data.get("candles", []):
-        hora_hm  = c.get("hora", "")[:5]   # "HH:MM"
-        resultado = c.get("resultado")
-        if hora_hm and resultado:
-            candle_map[hora_hm] = resultado
+    # Tenta até 3 vezes (70s, 100s, 130s desde o envio) antes de desistir
+    for attempt in range(1, 4):
+        try:
+            data = await asyncio.to_thread(_fetch)
+        except Exception as exc:
+            logger.warning("Condicional '%s': falha na API (tentativa %d): %s",
+                           message_name, attempt, exc)
+            if attempt < 3:
+                await asyncio.sleep(30)
+            continue
 
-    result = candle_map.get(candle_hour)
+        candle_map: dict = {}
+        for c in data.get("candles", []):
+            hora_hm  = c.get("hora", "")[:5]   # "HH:MM"
+            resultado = c.get("resultado")
+            if hora_hm and resultado:
+                candle_map[hora_hm] = resultado
+
+        logger.info("Condicional '%s': API candles disponíveis = %s (procurando %s, tent.%d)",
+                    message_name, list(candle_map.keys()), candle_hour, attempt)
+
+        result = candle_map.get(candle_hour)
+        if result:
+            break
+
+        logger.info("Condicional '%s': candle %s ainda não disponível — aguardando 30s (tent.%d/3)",
+                    message_name, candle_hour, attempt)
+        if attempt < 3:
+            await asyncio.sleep(30)
+
     if not result:
-        logger.info("Condicional '%s': candle %s não encontrado na janela da API (delay=%ds)",
-                    message_name, candle_hour, delay)
+        logger.warning("Condicional '%s': candle %s não encontrado após 3 tentativas — abortando",
+                       message_name, candle_hour)
         return
 
-    logger.info("Condicional '%s': candle %s → %s — enviando para %s",
-                message_name, candle_hour, result.upper(), chat_id)
+    logger.info("Condicional '%s': resultado %s para candle %s — enviando para %s",
+                message_name, result.upper(), candle_hour, chat_id)
 
-    cond_msg = conditional_win if result == "win" else conditional_loss
+    # Garante que cond_msg é sempre um dict (psycopg2 pode retornar string JSONB)
+    raw_win  = conditional_win  if isinstance(conditional_win,  dict) else {}
+    raw_loss = conditional_loss if isinstance(conditional_loss, dict) else {}
+    cond_msg = raw_win if result == "win" else raw_loss
+
     if not cond_msg:
+        logger.warning("Condicional '%s' [%s]: nenhum dicionário de mensagem configurado "
+                       "(cond_msg vazio) — verifique se salvou o condicional.", message_name, result.upper())
         return
+
+    logger.info("Condicional '%s' [%s]: cond_msg = %s", message_name, result.upper(), cond_msg)
 
     has_content = any(cond_msg.get(k) for k in ("text", "image", "video_note", "sticker"))
     if not has_content:
-        logger.info("Condicional '%s' [%s]: nenhum conteúdo configurado", message_name, result.upper())
+        logger.warning("Condicional '%s' [%s]: campos text/image/video_note/sticker todos vazios",
+                       message_name, result.upper())
         return
 
-    text_c      = cond_msg.get("text", "") or ""
-    image_c     = cond_msg.get("image") or None
+    await _dispatch_conditional(bot, chat_id, message_name, result, cond_msg, button_keys, config)
+
+    # Atualiza o candle_result no banco para refletir o resultado recém-enviado
+    try:
+        import db as _db
+        _db.update_candle_result_by_name(message_name, result)
+    except Exception:
+        pass  # não crítico
+
+
+async def _dispatch_conditional(
+    bot: Bot,
+    chat_id: str,
+    message_name: str,
+    result: str,
+    cond_msg: dict,
+    button_keys: list,
+    config: dict,
+) -> None:
+    """Envia o conteúdo condicional (sticker, vídeo bolinha, texto ou foto)."""
+    text_c       = cond_msg.get("text", "") or ""
+    image_c      = cond_msg.get("image") or None
     video_note_c = cond_msg.get("video_note") or None
-    sticker_c   = cond_msg.get("sticker") or None
+    sticker_c    = cond_msg.get("sticker") or None
     parse_mode_c = cond_msg.get("parse_mode", "HTML")
     show_buttons = cond_msg.get("show_buttons", True)
 
@@ -419,22 +471,24 @@ async def _check_and_send_conditional(
 
     try:
         if sticker_c:
-            # Envia sticker (file_id do Telegram)
+            logger.info("Condicional [%s] '%s': enviando sticker '%s'",
+                        result.upper(), message_name, sticker_c[:20])
             await bot.send_sticker(chat_id=chat_id, sticker=sticker_c)
-            # Texto acompanhante opcional
             if text_c:
                 await bot.send_message(chat_id=chat_id, text=text_c,
                                        parse_mode=pm, reply_markup=keyboard)
+
         elif video_note_c:
-            # Reutiliza a lógica completa de vídeo bolinha
+            logger.info("Condicional [%s] '%s': enviando vídeo bolinha", result.upper(), message_name)
             await send_scheduled_message(
                 bot=bot, text="", chat_id=chat_id,
                 button_keys=[], config=config,
                 image=None, message_name=f"{message_name} [{result.upper()}]",
                 parse_mode="HTML", video_note=video_note_c,
             )
-            return
+
         elif image_c:
+            logger.info("Condicional [%s] '%s': enviando foto", result.upper(), message_name)
             if image_c.startswith("http://") or image_c.startswith("https://"):
                 photo_data = image_c
             else:
@@ -453,14 +507,17 @@ async def _check_and_send_conditional(
             elif text_c:
                 await bot.send_message(chat_id=chat_id, text=text_c,
                                        parse_mode=pm, reply_markup=keyboard)
+
         elif text_c:
+            logger.info("Condicional [%s] '%s': enviando texto", result.upper(), message_name)
             await bot.send_message(chat_id=chat_id, text=text_c,
                                    parse_mode=pm, reply_markup=keyboard)
 
-        logger.info("Condicional [%s] '%s' enviado para %s", result.upper(), message_name, chat_id)
+        logger.info("✅ Condicional [%s] '%s' enviado com sucesso para %s",
+                    result.upper(), message_name, chat_id)
 
     except Exception as exc:
-        logger.error("Erro ao enviar condicional [%s] '%s' para %s: %s",
+        logger.error("❌ Erro ao enviar condicional [%s] '%s' para %s: %s",
                      result.upper(), message_name, chat_id, exc)
 
 
@@ -524,6 +581,76 @@ async def check_candle_results() -> None:
 
     if updated:
         logger.info("Candle checker: %d resultado(s) atualizado(s)", updated)
+
+
+async def send_conditional_now(
+    bot: Bot,
+    message_id: str,
+    result: str,
+    group_key: str,
+    config: dict,
+) -> dict:
+    """Dispara imediatamente a mensagem condicional WIN ou LOSS de um template.
+
+    Usado pelo endpoint /api/messages/<id>/test-conditional para testar sem
+    depender do horário do candle.
+
+    Retorna {"success": True} ou {"success": False, "error": "..."}.
+    """
+    import db as _db
+    try:
+        messages = _db.load_messages().get("messages", [])
+        msg = next((m for m in messages if m["id"] == message_id), None)
+        if not msg:
+            return {"success": False, "error": "Mensagem não encontrada"}
+
+        if not msg.get("conditional_enabled"):
+            return {"success": False, "error": "Verificação condicional não está ativada nessa mensagem"}
+
+        group = config.get("groups", {}).get(group_key)
+        if not group or not group.get("id"):
+            return {"success": False, "error": f"Grupo '{group_key}' não encontrado ou sem ID"}
+
+        cond_key = "conditional_win" if result == "win" else "conditional_loss"
+        cond_msg = _parse_jsonb_local(msg.get(cond_key) or {})
+
+        if not cond_msg:
+            return {"success": False, "error": f"Conteúdo condicional [{result.upper()}] não configurado"}
+
+        has_content = any(cond_msg.get(k) for k in ("text", "image", "video_note", "sticker"))
+        if not has_content:
+            return {"success": False, "error": f"Condicional [{result.upper()}]: text/image/video_note/sticker vazios"}
+
+        chat_id    = group["id"]
+        button_keys = group.get("default_buttons", [])
+
+        await _dispatch_conditional(
+            bot=bot,
+            chat_id=chat_id,
+            message_name=msg.get("name", message_id),
+            result=result,
+            cond_msg=cond_msg,
+            button_keys=button_keys,
+            config=config,
+        )
+        return {"success": True}
+
+    except Exception as exc:
+        logger.error("send_conditional_now erro: %s", exc)
+        return {"success": False, "error": str(exc)}
+
+
+def _parse_jsonb_local(v) -> dict:
+    """Helper local para garantir que v é um dict."""
+    if isinstance(v, dict):
+        return v
+    if isinstance(v, str):
+        try:
+            r = json.loads(v)
+            return r if isinstance(r, dict) else {}
+        except Exception:
+            return {}
+    return {}
 
 
 def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None:

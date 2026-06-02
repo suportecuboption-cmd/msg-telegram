@@ -454,6 +454,43 @@ def create_app() -> Flask:
         from flask import send_from_directory
         return send_from_directory(_UPLOAD_DIR.resolve(), filename)
 
+    @app.route("/api/messages/<message_id>/test-conditional", methods=["POST"])
+    @login_required
+    def test_conditional(message_id):
+        """Dispara imediatamente a mensagem condicional WIN ou LOSS sem esperar o candle.
+        Body: {"result": "win"|"loss", "group": "group_key"}
+        """
+        body   = request.get_json(force=True) or {}
+        result = body.get("result", "win")
+        group_key = body.get("group", "")
+
+        if result not in ("win", "loss"):
+            return jsonify({"error": "result deve ser 'win' ou 'loss'"}), 400
+
+        bot = _manager.get_bot() if _manager else None
+        if not bot or not _loop:
+            return jsonify({"error": "Nenhum bot online"}), 503
+
+        cfg = _load_config()
+        if not group_key:
+            # usa o primeiro grupo disponível
+            group_key = next(iter(cfg.get("groups", {})), "")
+        if not group_key:
+            return jsonify({"error": "Nenhum grupo configurado"}), 400
+
+        from bot import send_conditional_now
+        future = asyncio.run_coroutine_threadsafe(
+            send_conditional_now(bot, message_id, result, group_key, cfg),
+            _loop,
+        )
+        try:
+            outcome = future.result(timeout=30)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+        status_code = 200 if outcome.get("success") else 400
+        return jsonify(outcome), status_code
+
     @app.route("/api/messages/<message_id>/candle-result", methods=["PATCH"])
     @login_required
     def set_candle_result(message_id):

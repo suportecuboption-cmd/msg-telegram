@@ -1040,6 +1040,45 @@
   </div>
 </div>
 
+<!-- ── MODAL TESTAR CONDICIONAL ── -->
+<div class="modal fade" id="testCondModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-flask me-2" style="color:#fbbf24;"></i>Testar Condicional</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <p style="color:var(--text-muted);font-size:.875rem;">Envia a mensagem condicional <b>imediatamente</b>, sem aguardar o candle. Use para testar o conteúdo configurado.</p>
+        <div class="mb-3">
+          <label class="form-label">Resultado a simular</label>
+          <div class="d-flex gap-2">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="tc-result" id="tc-win" value="win" checked>
+              <label class="form-check-label" for="tc-win" style="color:#34d399;font-weight:600;">✓ WIN</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="tc-result" id="tc-loss" value="loss">
+              <label class="form-check-label" for="tc-loss" style="color:#f87171;font-weight:600;">✗ LOSS</label>
+            </div>
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Grupo</label>
+          <select class="form-select form-select-sm" id="tc-group"></select>
+        </div>
+        <div id="tc-result-msg" style="display:none;font-size:.82rem;margin-top:10px;padding:8px 12px;border-radius:8px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn px-4" style="background:#d97706;border:none;color:white;" onclick="runTestConditional()">
+          <i class="fas fa-flask me-2"></i>Enviar agora
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── MODAL ENVIAR AGORA ── -->
 <div class="modal fade" id="sendModal" tabindex="-1">
   <div class="modal-dialog">
@@ -1290,6 +1329,7 @@ function renderMsgCard(msg) {
         <div class="sched-tags">${tags}${extra}${scheds.length === 0 ? `<span style="font-size:.78rem;color:var(--text-muted);"><i class="fas fa-exclamation-circle me-1"></i>Sem agendamentos</span>` : ""}</div>
       </div>
       <div class="msg-actions">
+        ${msg.conditional_enabled ? `<button class="btn btn-xs" style="background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.35);color:#fbbf24;border-radius:8px;font-size:.75rem;padding:5px 9px;" onclick="openTestConditional('${esc(msg.id)}')" title="Testar condicional"><i class="fas fa-flask me-1"></i>Testar</button>` : ""}
         <button class="btn btn-outline-success btn-icon" onclick="openSend('${esc(msg.id)}')" title="Enviar agora"><i class="fas fa-paper-plane"></i></button>
         <button class="btn btn-outline-primary btn-icon" onclick="openEdit('${esc(msg.id)}')" title="Editar"><i class="fas fa-pen"></i></button>
         <button class="btn btn-outline-danger btn-icon" onclick="delMsg('${esc(msg.id)}')" title="Excluir"><i class="fas fa-trash"></i></button>
@@ -1704,6 +1744,59 @@ async function _uploadCondMedia(side, type, file) {
     }
   } catch {
     if (statusEl) { statusEl.style.color = "var(--danger)"; statusEl.innerHTML = '<i class="fas fa-times me-1"></i>Erro de conexão'; }
+  }
+}
+
+// ═══════════════════ TESTAR CONDICIONAL ══════════════════
+
+let _testCondMsgId = null;
+
+function openTestConditional(id) {
+  _testCondMsgId = id;
+  const grpSel = document.getElementById("tc-group");
+  grpSel.innerHTML = Object.entries(cfg.groups || {})
+    .map(([k, g]) => `<option value="${esc(k)}">${esc(g.name || k)}</option>`).join("");
+  document.getElementById("tc-result-msg").style.display = "none";
+  bootstrap.Modal.getOrCreateInstance(document.getElementById("testCondModal")).show();
+}
+
+async function runTestConditional() {
+  if (!_testCondMsgId) return;
+  const result   = document.querySelector("input[name='tc-result']:checked")?.value || "win";
+  const group    = document.getElementById("tc-group").value;
+  const msgEl    = document.getElementById("tc-result-msg");
+
+  msgEl.style.display = "";
+  msgEl.style.background = "rgba(255,255,255,.06)";
+  msgEl.style.border = "1px solid var(--border)";
+  msgEl.style.color  = "var(--text-muted)";
+  msgEl.innerHTML    = '<i class="fas fa-spinner fa-spin me-1"></i>Enviando...';
+
+  try {
+    const r = await fetch(`/api/messages/${_testCondMsgId}/test-conditional`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ result, group }),
+    });
+    const data = await r.json();
+    if (r.ok && data.success) {
+      msgEl.style.background = "rgba(16,185,129,.12)";
+      msgEl.style.border     = "1px solid rgba(16,185,129,.3)";
+      msgEl.style.color      = "#34d399";
+      msgEl.innerHTML        = `<i class="fas fa-check-circle me-1"></i>Enviado com sucesso! [${result.toUpperCase()}]`;
+      // Fecha o modal após 2s
+      setTimeout(() => bootstrap.Modal.getOrCreateInstance(document.getElementById("testCondModal")).hide(), 2000);
+    } else {
+      msgEl.style.background = "rgba(239,68,68,.12)";
+      msgEl.style.border     = "1px solid rgba(239,68,68,.3)";
+      msgEl.style.color      = "#f87171";
+      msgEl.innerHTML        = `<i class="fas fa-times-circle me-1"></i>${esc(data.error || "Erro desconhecido")}`;
+    }
+  } catch (e) {
+    msgEl.style.background = "rgba(239,68,68,.12)";
+    msgEl.style.border     = "1px solid rgba(239,68,68,.3)";
+    msgEl.style.color      = "#f87171";
+    msgEl.innerHTML        = '<i class="fas fa-times-circle me-1"></i>Erro de conexão';
   }
 }
 

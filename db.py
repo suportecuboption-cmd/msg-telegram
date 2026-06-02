@@ -273,6 +273,23 @@ def save_config(cfg: dict) -> None:
 
 # ── Messages ──────────────────────────────────────────────────────────────────
 
+def _parse_jsonb(v) -> dict:
+    """Converte valor JSONB do psycopg2 para dict Python.
+
+    psycopg2 pode retornar JSONB como dict (versões recentes) ou como string JSON
+    (versões mais antigas). Essa função garante que sempre retornamos um dict.
+    """
+    if isinstance(v, dict):
+        return v
+    if isinstance(v, str):
+        try:
+            parsed = json.loads(v)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
 def load_messages() -> dict:
     if not use_postgres():
         with open(_MESSAGES_FILE, "r", encoding="utf-8") as f:
@@ -304,8 +321,8 @@ def load_messages() -> dict:
                 "parse_mode": parse_mode or "HTML", "schedules": schedules,
                 "candle_hour": candle_hour, "candle_result": candle_result,
                 "conditional_enabled": bool(cond_en),
-                "conditional_win":  cond_win  if isinstance(cond_win, dict)  else (cond_win  or {}),
-                "conditional_loss": cond_loss if isinstance(cond_loss, dict) else (cond_loss or {}),
+                "conditional_win":  _parse_jsonb(cond_win),
+                "conditional_loss": _parse_jsonb(cond_loss),
             })
     return {"messages": msgs}
 
@@ -420,6 +437,22 @@ def delete_message(message_id: str) -> None:
         return
     with _conn() as c:
         c.cursor().execute("DELETE FROM messages WHERE id=%s", (message_id,))
+
+
+def update_candle_result_by_name(message_name: str, result) -> None:
+    """Atualiza candle_result de todas as mensagens com o nome dado (uso interno)."""
+    if not use_postgres():
+        data = load_messages()
+        for msg in data["messages"]:
+            if msg.get("name") == message_name:
+                msg["candle_result"] = result
+        save_messages(data)
+        return
+    with _conn() as c:
+        c.cursor().execute(
+            "UPDATE messages SET candle_result=%s WHERE name=%s",
+            (result, message_name),
+        )
 
 
 def update_candle_result(message_id: str, result) -> None:
