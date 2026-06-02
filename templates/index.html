@@ -464,6 +464,30 @@
       font-size:.85rem;font-weight:600;transition:all .18s;
     }
     .flow-add-btn:hover { background:rgba(124,58,237,.1);border-color:var(--accent); }
+    .flow-move-btns { display:flex;flex-direction:column;gap:2px;flex-shrink:0; }
+    .flow-move-btn {
+      width:26px;height:20px;border-radius:6px;border:1px solid var(--border);
+      background:rgba(255,255,255,.04);color:var(--text-muted);cursor:pointer;
+      display:flex;align-items:center;justify-content:center;font-size:.62rem;padding:0;transition:all .12s;
+    }
+    .flow-move-btn:hover:not(:disabled) { background:rgba(124,58,237,.2);color:#c4b5fd;border-color:var(--accent); }
+    .flow-move-btn:disabled { opacity:.3;cursor:not-allowed; }
+    .flow-node-handle { touch-action:none; }
+
+    /* Fluxograma responsivo (celular) */
+    @media (max-width:768px){
+      .flow-node { max-width:100%; }
+      .flow-node-body { gap:8px; padding:11px 10px; }
+      .flow-node-handle { font-size:1.1rem; padding:4px; }
+      .flow-time { min-width:50px; padding:6px 4px; }
+      .flow-time .ft-h { font-size:.92rem; }
+      .flow-time .ft-d { font-size:.55rem; }
+      .flow-node-name { font-size:.86rem; }
+      .flow-group-pill { padding:8px 12px; font-size:.8rem; }
+      .flow-start { font-size:.82rem; padding:9px 15px; }
+      .flow-node .btn-icon { width:30px;height:30px; }
+      .flow-node-meta { gap:4px; }
+    }
   </style>
 </head>
 <body>
@@ -1623,7 +1647,7 @@ function renderFlowCanvas() {
   }
 
   const nodes = items.map((it, i) =>
-    `${i > 0 ? '<div class="flow-connector"></div>' : ''}${_flowNodeHtml(it, i)}`
+    `${i > 0 ? '<div class="flow-connector"></div>' : ''}${_flowNodeHtml(it, i, items.length)}`
   ).join("");
 
   wrap.innerHTML = `
@@ -1637,7 +1661,7 @@ function renderFlowCanvas() {
   _bindFlowDrag();
 }
 
-function _flowNodeHtml(it, idx) {
+function _flowNodeHtml(it, idx, total) {
   const { msg, sched } = it;
   const time = (sched.time || "--:--").slice(0, 5);
   const days = (sched.days || []).map(d => DAYS.find(x => x.k === d)?.l || d).join(" ");
@@ -1654,15 +1678,22 @@ function _flowNodeHtml(it, idx) {
   else if (msg.candle_result === "loss") badges += `<span class="badge-loss"><i class="fas fa-times-circle"></i> LOSS</span>`;
   if (days) badges += `<span class="sched-tag">${esc(days)}</span>`;
 
+  const isFirst = idx === 0;
+  const isLast  = idx === total - 1;
+
   return `
-    <div class="flow-node ${active ? "" : "inactive"}" draggable="true" data-mid="${esc(msg.id)}">
+    <div class="flow-node ${active ? "" : "inactive"}" data-mid="${esc(msg.id)}">
       <div class="flow-node-bar"></div>
       <div class="flow-node-body">
-        <i class="fas fa-grip-vertical flow-node-handle"></i>
+        <i class="fas fa-grip-vertical flow-node-handle" title="Arraste para reordenar"></i>
         <div class="flow-time"><span class="ft-h">${esc(time)}</span><span class="ft-d">${idx + 1}º</span></div>
         <div class="flow-node-info">
           <div class="flow-node-name">${esc(msg.name || "Sem nome")}</div>
           <div class="flow-node-meta">${badges || '<span style="font-size:.74rem;color:var(--text-muted);">sem marcadores</span>'}</div>
+        </div>
+        <div class="flow-move-btns">
+          <button class="flow-move-btn" onclick="_moveFlow('${esc(msg.id)}',-1)" ${isFirst ? "disabled" : ""} title="Subir"><i class="fas fa-chevron-up"></i></button>
+          <button class="flow-move-btn" onclick="_moveFlow('${esc(msg.id)}',1)" ${isLast ? "disabled" : ""} title="Descer"><i class="fas fa-chevron-down"></i></button>
         </div>
         <div class="flow-node-actions">
           <button class="btn btn-outline-success btn-icon" onclick="openSend('${esc(msg.id)}')" title="Enviar agora"><i class="fas fa-paper-plane"></i></button>
@@ -1672,32 +1703,75 @@ function _flowNodeHtml(it, idx) {
     </div>`;
 }
 
-let _flowDragMid = null;
+// ── Reordenar via botões ↑↓ (funciona em qualquer dispositivo) ──
+function _moveFlow(mid, dir) {
+  let ids = _flowItems(_flowGroup).map(it => it.msg.id);
+  ids = ids.filter((v, i) => ids.indexOf(v) === i);
+  const i = ids.indexOf(mid);
+  const j = i + dir;
+  if (i === -1 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  _flowOrder[_flowGroup] = ids;
+  persistFlowOrder();
+  renderFlow();
+}
+
+// ── Arrastar via Pointer Events (mouse + toque/celular) ──
+let _drag = null;
 
 function _bindFlowDrag() {
   const canvas = document.getElementById("flow-canvas");
   if (!canvas) return;
   canvas.querySelectorAll(".flow-node").forEach(node => {
-    node.addEventListener("dragstart", e => {
-      _flowDragMid = node.dataset.mid;
-      node.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-    });
-    node.addEventListener("dragend", () => {
-      node.classList.remove("dragging");
-      canvas.querySelectorAll(".flow-node").forEach(n => n.classList.remove("drag-over"));
-    });
-    node.addEventListener("dragover", e => { e.preventDefault(); node.classList.add("drag-over"); });
-    node.addEventListener("dragleave", () => node.classList.remove("drag-over"));
-    node.addEventListener("drop", e => {
-      e.preventDefault();
-      node.classList.remove("drag-over");
-      const targetMid = node.dataset.mid;
-      if (_flowDragMid && targetMid && _flowDragMid !== targetMid) {
-        _reorderFlow(_flowDragMid, targetMid);
-      }
-    });
+    const handle = node.querySelector(".flow-node-handle") || node;
+    handle.addEventListener("pointerdown", e => _flowPointerDown(e, node, canvas));
   });
+}
+
+function _flowPointerDown(e, node, canvas) {
+  if (e.button && e.button !== 0) return;   // só botão esquerdo / toque
+  e.preventDefault();
+  _drag = {
+    mid: node.dataset.mid, node, canvas,
+    nodes: Array.from(canvas.querySelectorAll(".flow-node")),
+    startY: e.clientY, moved: false, overMid: null,
+  };
+  window.addEventListener("pointermove", _flowPointerMove, { passive: false });
+  window.addEventListener("pointerup", _flowPointerUp);
+}
+
+function _flowPointerMove(e) {
+  if (!_drag) return;
+  if (!_drag.moved && Math.abs(e.clientY - _drag.startY) < 6) return;
+  e.preventDefault();
+  _drag.moved = true;
+  _drag.node.classList.add("dragging");
+
+  // Auto-scroll suave perto das bordas (útil no celular)
+  const m = 80;
+  if (e.clientY < m) window.scrollBy(0, -12);
+  else if (e.clientY > window.innerHeight - m) window.scrollBy(0, 12);
+
+  let over = null;
+  for (const n of _drag.nodes) {
+    if (n === _drag.node) continue;
+    const r = n.getBoundingClientRect();
+    if (e.clientY >= r.top && e.clientY <= r.bottom) { over = n; break; }
+  }
+  _drag.nodes.forEach(n => n.classList.remove("drag-over"));
+  if (over) over.classList.add("drag-over");
+  _drag.overMid = over ? over.dataset.mid : null;
+}
+
+function _flowPointerUp() {
+  window.removeEventListener("pointermove", _flowPointerMove);
+  window.removeEventListener("pointerup", _flowPointerUp);
+  if (!_drag) return;
+  const { node, overMid, mid, moved } = _drag;
+  node.classList.remove("dragging");
+  _drag.nodes.forEach(n => n.classList.remove("drag-over"));
+  _drag = null;
+  if (moved && overMid && overMid !== mid) _reorderFlow(mid, overMid);
 }
 
 function _reorderFlow(dragMid, targetMid) {
