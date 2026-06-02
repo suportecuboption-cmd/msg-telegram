@@ -1878,17 +1878,76 @@ function _fdragUp() {
   window.removeEventListener("pointerup", _fdragUp);
   if (!_fdrag) return;
   const el = _fdrag.el;
+  const mid = _fdrag.mid;
+  const moved = _fdrag.moved;
   el.classList.remove("dragging");
-  if (_fdrag.moved) {
+  if (moved) {
     if (!_flowLayout[_flowGroup]) _flowLayout[_flowGroup] = {};
-    _flowLayout[_flowGroup][_fdrag.mid] = { x: el.offsetLeft, y: el.offsetTop };
+    _flowLayout[_flowGroup][mid] = { x: el.offsetLeft, y: el.offsetTop };
     persistFlowLayout();
-    // expande o board se necessário
     const board = _fdrag.board;
     board.style.height = Math.max(parseInt(board.style.height) || 0, el.offsetTop + el.offsetHeight + 70) + "px";
   }
   _fdrag = null;
   _drawFlowArrows();
+  if (moved) _syncParallelTime(mid);   // iguala horário se entrou numa linha paralela
+}
+
+// Agrupa os nós em linhas (mesma altura ≈ paralelo) a partir das posições no DOM
+function _flowRowsFromDOM() {
+  const board = document.getElementById("flow-board");
+  if (!board) return [];
+  const nodes = Array.from(board.querySelectorAll(".flow-node")).map(el => ({
+    mid: el.dataset.mid,
+    cy: el.offsetTop + el.offsetHeight / 2,
+    left: el.offsetLeft,
+  }));
+  nodes.sort((a, b) => a.cy - b.cy || a.left - b.left);
+  const TH = 46, rows = [];
+  nodes.forEach(n => {
+    let row = rows.find(r => Math.abs(r.cy - n.cy) < TH);
+    if (!row) { row = { cy: n.cy, nodes: [] }; rows.push(row); }
+    row.nodes.push(n);
+    row.cy = row.nodes.reduce((s, x) => s + x.cy, 0) / row.nodes.length;
+  });
+  return rows;
+}
+
+// Quando um card é solto na mesma linha de outro(s), iguala o horário do
+// agendamento (no grupo atual) ao do card de referência — paralelo real.
+async function _syncParallelTime(draggedMid) {
+  const rows = _flowRowsFromDOM();
+  const row = rows.find(r => r.nodes.some(n => n.mid === draggedMid));
+  if (!row || row.nodes.length < 2) return;
+
+  // referência = card mais à esquerda que NÃO é o arrastado
+  const others = row.nodes.filter(n => n.mid !== draggedMid).sort((a, b) => a.left - b.left);
+  const items  = _flowItems(_flowGroup);
+  const refItem = items.find(it => it.msg.id === others[0].mid);
+  const dragItem = items.find(it => it.msg.id === draggedMid);
+  if (!refItem || !dragItem) return;
+
+  const refTime = (refItem.sched.time || "").slice(0, 5);
+  const curTime = (dragItem.sched.time || "").slice(0, 5);
+  if (!refTime || refTime === curTime) return;
+
+  const msg = store.messages.find(m => m.id === draggedMid);
+  const sched = msg && (msg.schedules || []).find(s => s.id === dragItem.sched.id);
+  if (!sched) return;
+  sched.time = refTime;
+
+  try {
+    const r = await fetch(`/api/messages/${msg.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(msg),
+    });
+    if (r.ok) {
+      await fetchMessages();
+      renderFlow();
+      toast(`⚡ Horário sincronizado para ${refTime} — envio em paralelo`, "success");
+    }
+  } catch {}
 }
 
 function autoOrganizeFlow() {
