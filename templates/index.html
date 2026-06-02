@@ -479,20 +479,36 @@
     .flow-hint { font-size:.78rem;color:var(--text-muted);display:flex;align-items:center;gap:7px; }
     .flow-add-btn.sm { margin-top:0;padding:7px 13px;font-size:.78rem; }
     .flow-board {
-      position:relative; width:100%; min-height:460px; overflow:auto;
-      border:1px solid var(--border); border-radius:16px;
-      background:
-        radial-gradient(circle, rgba(255,255,255,.05) 1px, transparent 1.4px);
-      background-size:24px 24px; background-color:#0c0e1a;
-      touch-action:none; -webkit-overflow-scrolling:touch;
+      position:relative; width:100%; height:74vh; min-height:520px; overflow:auto;
+      border:1px solid var(--border); border-radius:16px; background-color:#0a0c16;
+      cursor:grab; touch-action:none; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
     }
+    .flow-board.panning { cursor:grabbing; }
+    .flow-canvas-inner {
+      position:relative; transform-origin:0 0; will-change:transform;
+      background: radial-gradient(circle, rgba(255,255,255,.05) 1px, transparent 1.4px);
+      background-size:26px 26px;
+    }
+    .flow-zoom-ctrl {
+      position:absolute; right:14px; bottom:14px; z-index:20; display:flex; flex-direction:column;
+      gap:4px; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:5px;
+      box-shadow:0 6px 20px rgba(0,0,0,.4);
+    }
+    .flow-zoom-ctrl button {
+      width:34px; height:34px; border-radius:8px; border:none; background:rgba(255,255,255,.05);
+      color:#e2e8f0; cursor:pointer; font-size:.9rem; display:flex; align-items:center; justify-content:center; transition:background .12s;
+    }
+    .flow-zoom-ctrl button:hover { background:rgba(124,58,237,.25); }
+    .flow-zoom-ctrl .zlevel { font-size:.66rem; color:var(--text-muted); text-align:center; padding:2px 0; user-select:none; }
     .flow-arrows { position:absolute; top:0; left:0; pointer-events:none; z-index:0; overflow:visible; }
     .flow-start-node {
-      position:absolute; top:14px; z-index:2;
+      position:absolute; top:14px; z-index:3; cursor:grab; touch-action:none;
       display:inline-flex; align-items:center; gap:9px; padding:11px 20px; border-radius:30px;
       background:linear-gradient(135deg,#2aabee,#229ed9); color:#fff; font-weight:700; font-size:.9rem;
-      box-shadow:0 6px 20px rgba(42,171,238,.35); white-space:nowrap;
+      box-shadow:0 6px 20px rgba(42,171,238,.35); white-space:nowrap; user-select:none;
     }
+    .flow-start-node:active { cursor:grabbing; }
+    .flow-start-node .fa-up-down-left-right { opacity:.6; font-size:.78rem; }
     .flow-node {
       position:absolute; width:262px; z-index:1; background:var(--card);
       border:1px solid var(--border); border-radius:16px; overflow:hidden;
@@ -1686,20 +1702,31 @@ function renderFlowCanvas() {
 
   wrap.innerHTML = `
     <div class="flow-toolbar">
-      <span class="flow-hint"><i class="fas fa-arrows-up-down-left-right"></i> Arraste os cards livremente. Cards na <b style="color:#fbbf24;">mesma linha = envio em paralelo</b>.</span>
+      <span class="flow-hint"><i class="fas fa-arrows-up-down-left-right"></i> Arraste os cards. <b style="color:#fbbf24;">Mesma linha = paralelo</b>. Scroll = zoom · arraste o vazio para mover.</span>
       <button class="flow-add-btn sm" onclick="autoOrganizeFlow()"><i class="fas fa-wand-magic-sparkles"></i> Auto-organizar</button>
     </div>
     <div class="flow-board" id="flow-board">
-      <svg class="flow-arrows" id="flow-arrows"></svg>
-      <div class="flow-start-node" id="flow-start-node"><i class="fab fa-telegram"></i> ${esc(gname)}</div>
-      ${items.map(it => _flowNodeHtml(it)).join("")}
+      <div class="flow-canvas-inner" id="flow-canvas-inner">
+        <svg class="flow-arrows" id="flow-arrows"></svg>
+        <div class="flow-start-node" id="flow-start-node"><i class="fas fa-up-down-left-right"></i><i class="fab fa-telegram"></i> ${esc(gname)}</div>
+        ${items.map(it => _flowNodeHtml(it)).join("")}
+      </div>
+      <div class="flow-zoom-ctrl">
+        <button onclick="_zoomFlow(0.15)" title="Aproximar"><i class="fas fa-plus"></i></button>
+        <div class="zlevel" id="flow-zoom-level">100%</div>
+        <button onclick="_zoomFlow(-0.15)" title="Afastar"><i class="fas fa-minus"></i></button>
+        <button onclick="_zoomReset()" title="Restaurar"><i class="fas fa-compress"></i></button>
+      </div>
     </div>
     <div style="margin-top:12px;text-align:center;">
       <button class="flow-add-btn" onclick="openAdd()"><i class="fas fa-plus"></i> Adicionar mensagem</button>
     </div>`;
 
+  _flowZoom = 1;
   _layoutFlowNodes(items);
   _bindFlowFreeDrag();
+  _bindFlowBoard();
+  _applyZoom();
   _drawFlowArrows();
 }
 
@@ -1739,44 +1766,59 @@ function _flowNodeHtml(it) {
     </div>`;
 }
 
+// Tamanho virtual do board livre (bem maior que a viewport p/ mover à vontade)
+const _FLOW_CW = 2600;
+
 // Posiciona os nós (posição salva ou auto-layout vertical centralizado)
 function _layoutFlowNodes(items) {
   const board = document.getElementById("flow-board");
-  if (!board) return;
+  const inner = document.getElementById("flow-canvas-inner");
+  if (!board || !inner) return;
   const layout = _flowLayout[_flowGroup] || {};
-  const W = board.clientWidth || 700;
+  const CW = _FLOW_CW;
 
   const startEl = document.getElementById("flow-start-node");
-  startEl.style.left = Math.max(8, (W - startEl.offsetWidth) / 2) + "px";
-  startEl.style.top  = "14px";
+  const sp = layout["__start"];
+  const sx = sp ? sp.x : (CW / 2 - startEl.offsetWidth / 2);
+  const sy = sp ? sp.y : 40;
+  startEl.style.left = sx + "px";
+  startEl.style.top  = sy + "px";
 
   const NODEW = 262;
-  const centerX = Math.max(8, (W - NODEW) / 2);
-  let maxBottom = 140;
+  const centerX = (CW - NODEW) / 2;
+  let maxBottom = sy + 200, maxRight = CW;
 
   items.forEach((it, i) => {
-    const el = board.querySelector(`.flow-node[data-mid="${CSS.escape(it.msg.id)}"]`);
+    const el = inner.querySelector(`.flow-node[data-mid="${CSS.escape(it.msg.id)}"]`);
     if (!el) return;
     const pos = layout[it.msg.id];
     const x = pos ? pos.x : centerX;
-    const y = pos ? pos.y : (90 + i * 118);
-    el.style.left = Math.max(0, Math.min(x, W - NODEW)) + "px";
+    const y = pos ? pos.y : (sy + 110 + i * 124);
+    el.style.left = Math.max(0, x) + "px";
     el.style.top  = Math.max(0, y) + "px";
     maxBottom = Math.max(maxBottom, y + el.offsetHeight);
+    maxRight  = Math.max(maxRight, x + NODEW);
   });
-  board.style.height = (maxBottom + 70) + "px";
+
+  inner.style.width  = Math.max(CW, maxRight + 300) + "px";
+  inner.style.height = Math.max(1400, maxBottom + 400) + "px";
+
+  // Centraliza a vista no conteúdo na primeira renderização do grupo
+  requestAnimationFrame(() => {
+    board.scrollLeft = (inner.offsetWidth * _flowZoom - board.clientWidth) / 2;
+    board.scrollTop  = Math.max(0, sy * _flowZoom - 30);
+  });
 }
 
 // Desenha as setas seguindo a sequência (top→bottom); linhas paralelas ramificam
 function _drawFlowArrows() {
-  const board = document.getElementById("flow-board");
+  const inner = document.getElementById("flow-canvas-inner");
   const svg = document.getElementById("flow-arrows");
-  if (!board || !svg) return;
-  const W = board.clientWidth, H = board.scrollHeight;
-  svg.setAttribute("width", W);
-  svg.setAttribute("height", H);
+  if (!inner || !svg) return;
+  svg.setAttribute("width", inner.offsetWidth);
+  svg.setAttribute("height", inner.offsetHeight);
 
-  const nodes = Array.from(board.querySelectorAll(".flow-node")).map(el => ({
+  const nodes = Array.from(inner.querySelectorAll(".flow-node")).map(el => ({
     el, mid: el.dataset.mid,
     x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight,
     cx: el.offsetLeft + el.offsetWidth / 2,
@@ -1837,36 +1879,120 @@ function _arrowPath(x1, y1, x2, y2, color) {
   return `<path d="M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}" stroke="${color}" stroke-width="2" fill="none" marker-end="url(#fa-arrow)" opacity="0.85"/>`;
 }
 
-// ── Arrastar livre (mouse + toque) ──
-let _fdrag = null;
+// ═══════════════════ ZOOM + PAN do board ═════════════════
+let _flowZoom = 1;
 
-function _bindFlowFreeDrag() {
+function _applyZoom() {
+  const inner = document.getElementById("flow-canvas-inner");
+  if (inner) inner.style.transform = `scale(${_flowZoom})`;
+  const lvl = document.getElementById("flow-zoom-level");
+  if (lvl) lvl.textContent = Math.round(_flowZoom * 100) + "%";
+}
+
+function _setZoom(z, cx, cy) {
+  const board = document.getElementById("flow-board");
+  const inner = document.getElementById("flow-canvas-inner");
+  if (!board || !inner) return;
+  const old = _flowZoom;
+  _flowZoom = Math.min(2.2, Math.max(0.3, z));
+  // ponto do conteúdo sob o cursor (px do inner, sem escala)
+  const br = board.getBoundingClientRect();
+  const px = (cx == null ? board.clientWidth / 2 : cx - br.left);
+  const py = (cy == null ? board.clientHeight / 2 : cy - br.top);
+  const ix = (board.scrollLeft + px) / old;
+  const iy = (board.scrollTop  + py) / old;
+  _applyZoom();
+  board.scrollLeft = ix * _flowZoom - px;
+  board.scrollTop  = iy * _flowZoom - py;
+}
+
+function _zoomFlow(delta) { _setZoom(_flowZoom + delta); }
+function _zoomReset()     { _setZoom(1); }
+
+// Liga wheel (zoom) e pan ao arrastar o vazio
+function _bindFlowBoard() {
   const board = document.getElementById("flow-board");
   if (!board) return;
-  board.querySelectorAll(".flow-node").forEach(el => {
+
+  board.addEventListener("wheel", e => {
+    e.preventDefault();
+    _setZoom(_flowZoom * (e.deltaY < 0 ? 1.12 : 0.89), e.clientX, e.clientY);
+  }, { passive: false });
+
+  board.addEventListener("pointerdown", e => {
+    // só inicia pan se clicou no vazio (não em card nem no nó do grupo)
+    if (e.target.closest(".flow-node") || e.target.closest(".flow-start-node") || e.target.closest(".flow-zoom-ctrl")) return;
+    if (e.button && e.button !== 0) return;
+    _pan = { x: e.clientX, y: e.clientY, sl: board.scrollLeft, st: board.scrollTop, board };
+    board.classList.add("panning");
+    window.addEventListener("pointermove", _panMove, { passive: false });
+    window.addEventListener("pointerup", _panUp);
+  });
+}
+
+let _pan = null;
+function _panMove(e) {
+  if (!_pan) return;
+  e.preventDefault();
+  _pan.board.scrollLeft = _pan.sl - (e.clientX - _pan.x);
+  _pan.board.scrollTop  = _pan.st - (e.clientY - _pan.y);
+}
+function _panUp() {
+  window.removeEventListener("pointermove", _panMove);
+  window.removeEventListener("pointerup", _panUp);
+  if (_pan) _pan.board.classList.remove("panning");
+  _pan = null;
+}
+
+// ── Arrastar cards (livre) + arrastar grupo (move toda a estrutura) ──
+let _fdrag = null;
+let _gdrag = null;
+
+function _bindFlowFreeDrag() {
+  const inner = document.getElementById("flow-canvas-inner");
+  if (!inner) return;
+
+  inner.querySelectorAll(".flow-node").forEach(el => {
     el.addEventListener("pointerdown", e => {
-      if (e.target.closest("button")) return;       // não arrasta ao clicar nos botões
+      if (e.target.closest("button")) return;
       if (e.button && e.button !== 0) return;
-      e.preventDefault();
+      e.preventDefault(); e.stopPropagation();
       const r = el.getBoundingClientRect();
-      _fdrag = { el, mid: el.dataset.mid, board,
-        dx: e.clientX - r.left, dy: e.clientY - r.top, moved: false };
+      _fdrag = { el, mid: el.dataset.mid, inner,
+        dx: (e.clientX - r.left) / _flowZoom, dy: (e.clientY - r.top) / _flowZoom, moved: false };
       el.classList.add("dragging");
       el.setPointerCapture?.(e.pointerId);
       window.addEventListener("pointermove", _fdragMove, { passive: false });
       window.addEventListener("pointerup", _fdragUp);
     });
   });
+
+  // Nó do grupo → arrasta TODA a estrutura
+  const startEl = document.getElementById("flow-start-node");
+  if (startEl) {
+    startEl.addEventListener("pointerdown", e => {
+      if (e.button && e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      const ir = inner.getBoundingClientRect();
+      const base = { __start: { x: startEl.offsetLeft, y: startEl.offsetTop } };
+      inner.querySelectorAll(".flow-node").forEach(n => base[n.dataset.mid] = { x: n.offsetLeft, y: n.offsetTop });
+      _gdrag = { startEl, inner, base, moved: false,
+        px: (e.clientX - ir.left) / _flowZoom, py: (e.clientY - ir.top) / _flowZoom };
+      startEl.setPointerCapture?.(e.pointerId);
+      window.addEventListener("pointermove", _gdragMove, { passive: false });
+      window.addEventListener("pointerup", _gdragUp);
+    });
+  }
 }
 
 function _fdragMove(e) {
   if (!_fdrag) return;
   e.preventDefault();
   _fdrag.moved = true;
-  const br = _fdrag.board.getBoundingClientRect();
-  let x = e.clientX - br.left + _fdrag.board.scrollLeft - _fdrag.dx;
-  let y = e.clientY - br.top  + _fdrag.board.scrollTop  - _fdrag.dy;
-  x = Math.max(0, Math.min(x, _fdrag.board.clientWidth - _fdrag.el.offsetWidth));
+  const ir = _fdrag.inner.getBoundingClientRect();
+  let x = (e.clientX - ir.left) / _flowZoom - _fdrag.dx;
+  let y = (e.clientY - ir.top)  / _flowZoom - _fdrag.dy;
+  x = Math.max(0, x);
   y = Math.max(0, y);
   _fdrag.el.style.left = x + "px";
   _fdrag.el.style.top  = y + "px";
@@ -1877,20 +2003,54 @@ function _fdragUp() {
   window.removeEventListener("pointermove", _fdragMove);
   window.removeEventListener("pointerup", _fdragUp);
   if (!_fdrag) return;
-  const el = _fdrag.el;
-  const mid = _fdrag.mid;
-  const moved = _fdrag.moved;
+  const el = _fdrag.el, mid = _fdrag.mid, moved = _fdrag.moved;
   el.classList.remove("dragging");
   if (moved) {
     if (!_flowLayout[_flowGroup]) _flowLayout[_flowGroup] = {};
     _flowLayout[_flowGroup][mid] = { x: el.offsetLeft, y: el.offsetTop };
     persistFlowLayout();
-    const board = _fdrag.board;
-    board.style.height = Math.max(parseInt(board.style.height) || 0, el.offsetTop + el.offsetHeight + 70) + "px";
   }
   _fdrag = null;
   _drawFlowArrows();
-  if (moved) _syncParallelTime(mid);   // iguala horário se entrou numa linha paralela
+  if (moved) _syncParallelTime(mid);
+}
+
+function _gdragMove(e) {
+  if (!_gdrag) return;
+  e.preventDefault();
+  _gdrag.moved = true;
+  const ir = _gdrag.inner.getBoundingClientRect();
+  const nx = (e.clientX - ir.left) / _flowZoom;
+  const ny = (e.clientY - ir.top)  / _flowZoom;
+  const ddx = nx - _gdrag.px, ddy = ny - _gdrag.py;
+  // move o grupo
+  const s = _gdrag.base.__start;
+  _gdrag.startEl.style.left = Math.max(0, s.x + ddx) + "px";
+  _gdrag.startEl.style.top  = Math.max(0, s.y + ddy) + "px";
+  // move todos os cards juntos
+  _gdrag.inner.querySelectorAll(".flow-node").forEach(n => {
+    const b = _gdrag.base[n.dataset.mid];
+    if (!b) return;
+    n.style.left = Math.max(0, b.x + ddx) + "px";
+    n.style.top  = Math.max(0, b.y + ddy) + "px";
+  });
+  _drawFlowArrows();
+}
+
+function _gdragUp() {
+  window.removeEventListener("pointermove", _gdragMove);
+  window.removeEventListener("pointerup", _gdragUp);
+  if (!_gdrag) return;
+  if (_gdrag.moved) {
+    if (!_flowLayout[_flowGroup]) _flowLayout[_flowGroup] = {};
+    _flowLayout[_flowGroup].__start = { x: _gdrag.startEl.offsetLeft, y: _gdrag.startEl.offsetTop };
+    _gdrag.inner.querySelectorAll(".flow-node").forEach(n => {
+      _flowLayout[_flowGroup][n.dataset.mid] = { x: n.offsetLeft, y: n.offsetTop };
+    });
+    persistFlowLayout();
+  }
+  _gdrag = null;
+  _drawFlowArrows();
 }
 
 // Agrupa os nós em linhas (mesma altura ≈ paralelo) a partir das posições no DOM
