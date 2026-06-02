@@ -420,6 +420,30 @@ def create_app() -> Flask:
         _db.save_flow_order(clean)
         return jsonify({"success": True})
 
+    @app.route("/api/flow-layout", methods=["GET"])
+    @login_required
+    def get_flow_layout():
+        return jsonify(_db.load_flow_layout())
+
+    @app.route("/api/flow-layout", methods=["PUT"])
+    @login_required
+    def set_flow_layout():
+        data = request.get_json(force=True) or {}
+        # Espera {group_key: {message_id: {x, y}}}
+        clean = {}
+        for gk, nodes in data.items():
+            if not isinstance(nodes, dict):
+                continue
+            clean[gk] = {}
+            for mid, pos in nodes.items():
+                if isinstance(pos, dict) and "x" in pos and "y" in pos:
+                    try:
+                        clean[gk][mid] = {"x": float(pos["x"]), "y": float(pos["y"])}
+                    except (TypeError, ValueError):
+                        pass
+        _db.save_flow_layout(clean)
+        return jsonify({"success": True})
+
     # ── Messages ──────────────────────────────────────────────────────────────
 
     @app.route("/api/messages", methods=["GET"])

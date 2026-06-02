@@ -474,19 +474,52 @@
     .flow-move-btn:disabled { opacity:.3;cursor:not-allowed; }
     .flow-node-handle { touch-action:none; }
 
+    /* ── Board livre (MindMeister) ── */
+    .flow-toolbar { display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap; }
+    .flow-hint { font-size:.78rem;color:var(--text-muted);display:flex;align-items:center;gap:7px; }
+    .flow-add-btn.sm { margin-top:0;padding:7px 13px;font-size:.78rem; }
+    .flow-board {
+      position:relative; width:100%; min-height:460px; overflow:auto;
+      border:1px solid var(--border); border-radius:16px;
+      background:
+        radial-gradient(circle, rgba(255,255,255,.05) 1px, transparent 1.4px);
+      background-size:24px 24px; background-color:#0c0e1a;
+      touch-action:none; -webkit-overflow-scrolling:touch;
+    }
+    .flow-arrows { position:absolute; top:0; left:0; pointer-events:none; z-index:0; overflow:visible; }
+    .flow-start-node {
+      position:absolute; top:14px; z-index:2;
+      display:inline-flex; align-items:center; gap:9px; padding:11px 20px; border-radius:30px;
+      background:linear-gradient(135deg,#2aabee,#229ed9); color:#fff; font-weight:700; font-size:.9rem;
+      box-shadow:0 6px 20px rgba(42,171,238,.35); white-space:nowrap;
+    }
+    .flow-node {
+      position:absolute; width:262px; z-index:1; background:var(--card);
+      border:1px solid var(--border); border-radius:16px; overflow:hidden;
+      cursor:grab; transition:box-shadow .15s, border-color .15s; touch-action:none;
+    }
+    .flow-node:hover { border-color:rgba(124,58,237,.45); }
+    .flow-node.dragging { z-index:30; cursor:grabbing; box-shadow:0 16px 40px rgba(0,0,0,.5); border-color:var(--accent); }
+    .flow-node.parallel { border-color:rgba(245,158,11,.55); box-shadow:0 0 0 1px rgba(245,158,11,.25); }
+    .flow-node.inactive { opacity:.55; }
+    .flow-par-badge {
+      position:absolute; top:-9px; right:10px; z-index:2; font-size:.62rem; font-weight:700;
+      padding:2px 8px; border-radius:20px; background:#f59e0b; color:#1a1205;
+      display:none; align-items:center; gap:4px;
+    }
+    .flow-node.parallel .flow-par-badge { display:inline-flex; }
+
     /* Fluxograma responsivo (celular) */
     @media (max-width:768px){
-      .flow-node { max-width:100%; }
       .flow-node-body { gap:8px; padding:11px 10px; }
-      .flow-node-handle { font-size:1.1rem; padding:4px; }
-      .flow-time { min-width:50px; padding:6px 4px; }
-      .flow-time .ft-h { font-size:.92rem; }
+      .flow-time { min-width:48px; padding:6px 4px; }
+      .flow-time .ft-h { font-size:.9rem; }
       .flow-time .ft-d { font-size:.55rem; }
-      .flow-node-name { font-size:.86rem; }
+      .flow-node-name { font-size:.85rem; }
       .flow-group-pill { padding:8px 12px; font-size:.8rem; }
-      .flow-start { font-size:.82rem; padding:9px 15px; }
       .flow-node .btn-icon { width:30px;height:30px; }
       .flow-node-meta { gap:4px; }
+      .flow-board { min-height:70vh; }
     }
   </style>
 </head>
@@ -1325,7 +1358,8 @@ let sendMsgId = null;
 let schedIdx = 0;
 let _pares = [];            // lista de ativos disponíveis
 let _selectedSymbol = null; // símbolo atualmente selecionado no modal
-let _flowOrder = {};        // {group_key: [message_id, ...]}
+let _flowOrder = {};        // {group_key: [message_id, ...]} (legado/ordenação)
+let _flowLayout = {};       // {group_key: {message_id: {x, y}}} posições no board
 let _flowGroup = null;      // grupo selecionado na vista de fluxo
 
 const DAYS = [
@@ -1432,10 +1466,14 @@ async function init() {
     document.getElementById("nav-admin").style.display = "";
   }
 
-  await Promise.all([fetchConfig(), fetchMessages(), fetchPares(), fetchFlowOrder()]);
+  await Promise.all([fetchConfig(), fetchMessages(), fetchPares(), fetchFlowOrder(), fetchFlowLayout()]);
   renderMsgList();
   checkStatus();
   setInterval(checkStatus, 30000);
+  window.addEventListener("resize", () => {
+    const fp = document.getElementById("page-flow");
+    if (fp && fp.style.display !== "none" && document.getElementById("flow-board")) _drawFlowArrows();
+  });
 
   // Attach live preview listeners once when modal opens
   document.getElementById("msgModal").addEventListener("shown.bs.modal", () => {
@@ -1573,17 +1611,24 @@ async function fetchFlowOrder() {
   } catch { _flowOrder = {}; }
 }
 
-async function persistFlowOrder() {
+async function fetchFlowLayout() {
   try {
-    await fetch("/api/flow-order", {
+    const r = await fetch("/api/flow-layout");
+    _flowLayout = (await r.json()) || {};
+  } catch { _flowLayout = {}; }
+}
+
+async function persistFlowLayout() {
+  try {
+    await fetch("/api/flow-layout", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(_flowOrder),
+      body: JSON.stringify(_flowLayout),
     });
   } catch {}
 }
 
-// Retorna [{msg, sched}] — 1 nó por mensagem com agendamento no grupo, ordenado
+// Retorna [{msg, sched}] — 1 nó por mensagem com agendamento no grupo
 function _flowItems(groupKey) {
   const byMsg = {};
   (store.messages || []).forEach(msg => {
@@ -1595,14 +1640,7 @@ function _flowItems(groupKey) {
     });
   });
   const items = Object.values(byMsg);
-  const order = _flowOrder[groupKey] || [];
-  items.sort((a, b) => {
-    const ia = order.indexOf(a.msg.id), ib = order.indexOf(b.msg.id);
-    if (ia !== -1 && ib !== -1) return ia - ib;
-    if (ia !== -1) return -1;
-    if (ib !== -1) return 1;
-    return (a.sched.time || "").localeCompare(b.sched.time || "");
-  });
+  items.sort((a, b) => (a.sched.time || "").localeCompare(b.sched.time || ""));
   return items;
 }
 
@@ -1646,22 +1684,26 @@ function renderFlowCanvas() {
     return;
   }
 
-  const nodes = items.map((it, i) =>
-    `${i > 0 ? '<div class="flow-connector"></div>' : ''}${_flowNodeHtml(it, i, items.length)}`
-  ).join("");
-
   wrap.innerHTML = `
-    <div class="flow-canvas" id="flow-canvas">
-      <div class="flow-start"><i class="fab fa-telegram"></i> ${esc(gname)}</div>
-      <div class="flow-connector"></div>
-      ${nodes}
-      <div style="margin-top:14px;"><button class="flow-add-btn" onclick="openAdd()"><i class="fas fa-plus"></i> Adicionar mensagem</button></div>
+    <div class="flow-toolbar">
+      <span class="flow-hint"><i class="fas fa-arrows-up-down-left-right"></i> Arraste os cards livremente. Cards na <b style="color:#fbbf24;">mesma linha = envio em paralelo</b>.</span>
+      <button class="flow-add-btn sm" onclick="autoOrganizeFlow()"><i class="fas fa-wand-magic-sparkles"></i> Auto-organizar</button>
+    </div>
+    <div class="flow-board" id="flow-board">
+      <svg class="flow-arrows" id="flow-arrows"></svg>
+      <div class="flow-start-node" id="flow-start-node"><i class="fab fa-telegram"></i> ${esc(gname)}</div>
+      ${items.map(it => _flowNodeHtml(it)).join("")}
+    </div>
+    <div style="margin-top:12px;text-align:center;">
+      <button class="flow-add-btn" onclick="openAdd()"><i class="fas fa-plus"></i> Adicionar mensagem</button>
     </div>`;
 
-  _bindFlowDrag();
+  _layoutFlowNodes(items);
+  _bindFlowFreeDrag();
+  _drawFlowArrows();
 }
 
-function _flowNodeHtml(it, idx, total) {
+function _flowNodeHtml(it) {
   const { msg, sched } = it;
   const time = (sched.time || "--:--").slice(0, 5);
   const days = (sched.days || []).map(d => DAYS.find(x => x.k === d)?.l || d).join(" ");
@@ -1678,113 +1720,182 @@ function _flowNodeHtml(it, idx, total) {
   else if (msg.candle_result === "loss") badges += `<span class="badge-loss"><i class="fas fa-times-circle"></i> LOSS</span>`;
   if (days) badges += `<span class="sched-tag">${esc(days)}</span>`;
 
-  const isFirst = idx === 0;
-  const isLast  = idx === total - 1;
-
   return `
     <div class="flow-node ${active ? "" : "inactive"}" data-mid="${esc(msg.id)}">
+      <span class="flow-par-badge"><i class="fas fa-bolt"></i> paralelo</span>
       <div class="flow-node-bar"></div>
       <div class="flow-node-body">
-        <i class="fas fa-grip-vertical flow-node-handle" title="Arraste para reordenar"></i>
-        <div class="flow-time"><span class="ft-h">${esc(time)}</span><span class="ft-d">${idx + 1}º</span></div>
+        <i class="fas fa-grip-vertical flow-node-handle"></i>
+        <div class="flow-time"><span class="ft-h">${esc(time)}</span><span class="ft-d">M1</span></div>
         <div class="flow-node-info">
           <div class="flow-node-name">${esc(msg.name || "Sem nome")}</div>
           <div class="flow-node-meta">${badges || '<span style="font-size:.74rem;color:var(--text-muted);">sem marcadores</span>'}</div>
         </div>
-        <div class="flow-move-btns">
-          <button class="flow-move-btn" onclick="_moveFlow('${esc(msg.id)}',-1)" ${isFirst ? "disabled" : ""} title="Subir"><i class="fas fa-chevron-up"></i></button>
-          <button class="flow-move-btn" onclick="_moveFlow('${esc(msg.id)}',1)" ${isLast ? "disabled" : ""} title="Descer"><i class="fas fa-chevron-down"></i></button>
-        </div>
         <div class="flow-node-actions">
-          <button class="btn btn-outline-success btn-icon" onclick="openSend('${esc(msg.id)}')" title="Enviar agora"><i class="fas fa-paper-plane"></i></button>
-          <button class="btn btn-outline-primary btn-icon" onclick="openEdit('${esc(msg.id)}')" title="Editar"><i class="fas fa-pen"></i></button>
+          <button class="btn btn-outline-success btn-icon" onpointerdown="event.stopPropagation()" onclick="openSend('${esc(msg.id)}')" title="Enviar agora"><i class="fas fa-paper-plane"></i></button>
+          <button class="btn btn-outline-primary btn-icon" onpointerdown="event.stopPropagation()" onclick="openEdit('${esc(msg.id)}')" title="Editar"><i class="fas fa-pen"></i></button>
         </div>
       </div>
     </div>`;
 }
 
-// ── Reordenar via botões ↑↓ (funciona em qualquer dispositivo) ──
-function _moveFlow(mid, dir) {
-  let ids = _flowItems(_flowGroup).map(it => it.msg.id);
-  ids = ids.filter((v, i) => ids.indexOf(v) === i);
-  const i = ids.indexOf(mid);
-  const j = i + dir;
-  if (i === -1 || j < 0 || j >= ids.length) return;
-  [ids[i], ids[j]] = [ids[j], ids[i]];
-  _flowOrder[_flowGroup] = ids;
-  persistFlowOrder();
-  renderFlow();
+// Posiciona os nós (posição salva ou auto-layout vertical centralizado)
+function _layoutFlowNodes(items) {
+  const board = document.getElementById("flow-board");
+  if (!board) return;
+  const layout = _flowLayout[_flowGroup] || {};
+  const W = board.clientWidth || 700;
+
+  const startEl = document.getElementById("flow-start-node");
+  startEl.style.left = Math.max(8, (W - startEl.offsetWidth) / 2) + "px";
+  startEl.style.top  = "14px";
+
+  const NODEW = 262;
+  const centerX = Math.max(8, (W - NODEW) / 2);
+  let maxBottom = 140;
+
+  items.forEach((it, i) => {
+    const el = board.querySelector(`.flow-node[data-mid="${CSS.escape(it.msg.id)}"]`);
+    if (!el) return;
+    const pos = layout[it.msg.id];
+    const x = pos ? pos.x : centerX;
+    const y = pos ? pos.y : (90 + i * 118);
+    el.style.left = Math.max(0, Math.min(x, W - NODEW)) + "px";
+    el.style.top  = Math.max(0, y) + "px";
+    maxBottom = Math.max(maxBottom, y + el.offsetHeight);
+  });
+  board.style.height = (maxBottom + 70) + "px";
 }
 
-// ── Arrastar via Pointer Events (mouse + toque/celular) ──
-let _drag = null;
+// Desenha as setas seguindo a sequência (top→bottom); linhas paralelas ramificam
+function _drawFlowArrows() {
+  const board = document.getElementById("flow-board");
+  const svg = document.getElementById("flow-arrows");
+  if (!board || !svg) return;
+  const W = board.clientWidth, H = board.scrollHeight;
+  svg.setAttribute("width", W);
+  svg.setAttribute("height", H);
 
-function _bindFlowDrag() {
-  const canvas = document.getElementById("flow-canvas");
-  if (!canvas) return;
-  canvas.querySelectorAll(".flow-node").forEach(node => {
-    const handle = node.querySelector(".flow-node-handle") || node;
-    handle.addEventListener("pointerdown", e => _flowPointerDown(e, node, canvas));
+  const nodes = Array.from(board.querySelectorAll(".flow-node")).map(el => ({
+    el, mid: el.dataset.mid,
+    x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight,
+    cx: el.offsetLeft + el.offsetWidth / 2,
+    top: el.offsetTop, bottom: el.offsetTop + el.offsetHeight,
+    cy: el.offsetTop + el.offsetHeight / 2,
+  }));
+  if (nodes.length === 0) { svg.innerHTML = ""; return; }
+
+  nodes.sort((a, b) => a.cy - b.cy || a.cx - b.cx);
+
+  // agrupa em "linhas" (mesma altura aprox = paralelo)
+  const TH = 46;
+  const rows = [];
+  nodes.forEach(n => {
+    let row = rows.find(r => Math.abs(r.cy - n.cy) < TH);
+    if (!row) { row = { cy: n.cy, nodes: [] }; rows.push(row); }
+    row.nodes.push(n);
+    row.cy = row.nodes.reduce((s, x) => s + x.cy, 0) / row.nodes.length;
+  });
+  rows.sort((a, b) => a.cy - b.cy);
+
+  // marca paralelos
+  nodes.forEach(n => n.el.classList.remove("parallel"));
+  rows.forEach(r => { if (r.nodes.length > 1) r.nodes.forEach(n => n.el.classList.add("parallel")); });
+
+  const C = "#7c3aed";
+  let paths = "";
+  const startEl = document.getElementById("flow-start-node");
+  const sCx = startEl.offsetLeft + startEl.offsetWidth / 2;
+  const sBot = startEl.offsetTop + startEl.offsetHeight;
+
+  // início → primeira linha
+  if (rows[0]) rows[0].nodes.forEach(n => paths += _arrowPath(sCx, sBot, n.cx, n.top, C));
+  // linha i → linha i+1
+  for (let i = 0; i < rows.length - 1; i++) {
+    rows[i].nodes.forEach(a => {
+      rows[i + 1].nodes.forEach(b => { paths += _arrowPath(a.cx, a.bottom, b.cx, b.top, C); });
+    });
+  }
+  // conector tracejado entre paralelos da mesma linha
+  rows.forEach(r => {
+    if (r.nodes.length > 1) {
+      const sorted = [...r.nodes].sort((a, b) => a.cx - b.cx);
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const a = sorted[i], b = sorted[i + 1];
+        paths += `<line x1="${a.x + a.w}" y1="${a.cy}" x2="${b.x}" y2="${b.cy}" stroke="#f59e0b" stroke-width="2" stroke-dasharray="4 4" opacity="0.7"/>`;
+      }
+    }
+  });
+
+  svg.innerHTML =
+    `<defs><marker id="fa-arrow" markerWidth="9" markerHeight="7" refX="7" refY="3.5" orient="auto">
+       <path d="M0,0 L9,3.5 L0,7 Z" fill="${C}"/></marker></defs>${paths}`;
+}
+
+function _arrowPath(x1, y1, x2, y2, color) {
+  const my = (y1 + y2) / 2;
+  return `<path d="M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}" stroke="${color}" stroke-width="2" fill="none" marker-end="url(#fa-arrow)" opacity="0.85"/>`;
+}
+
+// ── Arrastar livre (mouse + toque) ──
+let _fdrag = null;
+
+function _bindFlowFreeDrag() {
+  const board = document.getElementById("flow-board");
+  if (!board) return;
+  board.querySelectorAll(".flow-node").forEach(el => {
+    el.addEventListener("pointerdown", e => {
+      if (e.target.closest("button")) return;       // não arrasta ao clicar nos botões
+      if (e.button && e.button !== 0) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      _fdrag = { el, mid: el.dataset.mid, board,
+        dx: e.clientX - r.left, dy: e.clientY - r.top, moved: false };
+      el.classList.add("dragging");
+      el.setPointerCapture?.(e.pointerId);
+      window.addEventListener("pointermove", _fdragMove, { passive: false });
+      window.addEventListener("pointerup", _fdragUp);
+    });
   });
 }
 
-function _flowPointerDown(e, node, canvas) {
-  if (e.button && e.button !== 0) return;   // só botão esquerdo / toque
+function _fdragMove(e) {
+  if (!_fdrag) return;
   e.preventDefault();
-  _drag = {
-    mid: node.dataset.mid, node, canvas,
-    nodes: Array.from(canvas.querySelectorAll(".flow-node")),
-    startY: e.clientY, moved: false, overMid: null,
-  };
-  window.addEventListener("pointermove", _flowPointerMove, { passive: false });
-  window.addEventListener("pointerup", _flowPointerUp);
+  _fdrag.moved = true;
+  const br = _fdrag.board.getBoundingClientRect();
+  let x = e.clientX - br.left + _fdrag.board.scrollLeft - _fdrag.dx;
+  let y = e.clientY - br.top  + _fdrag.board.scrollTop  - _fdrag.dy;
+  x = Math.max(0, Math.min(x, _fdrag.board.clientWidth - _fdrag.el.offsetWidth));
+  y = Math.max(0, y);
+  _fdrag.el.style.left = x + "px";
+  _fdrag.el.style.top  = y + "px";
+  _drawFlowArrows();
 }
 
-function _flowPointerMove(e) {
-  if (!_drag) return;
-  if (!_drag.moved && Math.abs(e.clientY - _drag.startY) < 6) return;
-  e.preventDefault();
-  _drag.moved = true;
-  _drag.node.classList.add("dragging");
-
-  // Auto-scroll suave perto das bordas (útil no celular)
-  const m = 80;
-  if (e.clientY < m) window.scrollBy(0, -12);
-  else if (e.clientY > window.innerHeight - m) window.scrollBy(0, 12);
-
-  let over = null;
-  for (const n of _drag.nodes) {
-    if (n === _drag.node) continue;
-    const r = n.getBoundingClientRect();
-    if (e.clientY >= r.top && e.clientY <= r.bottom) { over = n; break; }
+function _fdragUp() {
+  window.removeEventListener("pointermove", _fdragMove);
+  window.removeEventListener("pointerup", _fdragUp);
+  if (!_fdrag) return;
+  const el = _fdrag.el;
+  el.classList.remove("dragging");
+  if (_fdrag.moved) {
+    if (!_flowLayout[_flowGroup]) _flowLayout[_flowGroup] = {};
+    _flowLayout[_flowGroup][_fdrag.mid] = { x: el.offsetLeft, y: el.offsetTop };
+    persistFlowLayout();
+    // expande o board se necessário
+    const board = _fdrag.board;
+    board.style.height = Math.max(parseInt(board.style.height) || 0, el.offsetTop + el.offsetHeight + 70) + "px";
   }
-  _drag.nodes.forEach(n => n.classList.remove("drag-over"));
-  if (over) over.classList.add("drag-over");
-  _drag.overMid = over ? over.dataset.mid : null;
+  _fdrag = null;
+  _drawFlowArrows();
 }
 
-function _flowPointerUp() {
-  window.removeEventListener("pointermove", _flowPointerMove);
-  window.removeEventListener("pointerup", _flowPointerUp);
-  if (!_drag) return;
-  const { node, overMid, mid, moved } = _drag;
-  node.classList.remove("dragging");
-  _drag.nodes.forEach(n => n.classList.remove("drag-over"));
-  _drag = null;
-  if (moved && overMid && overMid !== mid) _reorderFlow(mid, overMid);
-}
-
-function _reorderFlow(dragMid, targetMid) {
-  let ids = _flowItems(_flowGroup).map(it => it.msg.id);
-  ids = ids.filter((v, i) => ids.indexOf(v) === i);
-  const from = ids.indexOf(dragMid);
-  const to   = ids.indexOf(targetMid);
-  if (from === -1 || to === -1) return;
-  ids.splice(to, 0, ids.splice(from, 1)[0]);
-  _flowOrder[_flowGroup] = ids;
-  persistFlowOrder();
-  renderFlow();
-  toast("Ordem atualizada", "success");
+function autoOrganizeFlow() {
+  delete _flowLayout[_flowGroup];
+  persistFlowLayout();
+  renderFlowCanvas();
+  toast("Fluxo reorganizado em coluna", "success");
 }
 
 // ═══════════════════════ WIZARD (4 passos) ═══════════════

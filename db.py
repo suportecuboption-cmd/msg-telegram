@@ -572,6 +572,47 @@ def save_flow_order(data: dict) -> None:
         )
 
 
+# ── Layout livre do fluxograma (posições X/Y por grupo) ─────────────────────────
+
+_FLOW_LAYOUT_FILE = _DATA / "flow_layout.json"
+
+
+def load_flow_layout() -> dict:
+    """Retorna {group_key: {message_id: {x, y}}} com posições do board livre."""
+    if not use_postgres():
+        if not _FLOW_LAYOUT_FILE.exists():
+            return {}
+        try:
+            return json.loads(_FLOW_LAYOUT_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    with _conn() as c:
+        cur = c.cursor()
+        cur.execute("SELECT value FROM settings WHERE key='flow_layout'")
+        row = cur.fetchone()
+    if not row or not row[0]:
+        return {}
+    try:
+        data = json.loads(row[0])
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_flow_layout(data: dict) -> None:
+    """Persiste {group_key: {message_id: {x, y}}}."""
+    payload = json.dumps(data or {}, ensure_ascii=False)
+    if not use_postgres():
+        _FLOW_LAYOUT_FILE.write_text(payload, encoding="utf-8")
+        return
+    with _conn() as c:
+        c.cursor().execute(
+            "INSERT INTO settings(key,value) VALUES('flow_layout',%s) "
+            "ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+            (payload,),
+        )
+
+
 # ── Users ─────────────────────────────────────────────────────────────────────
 
 def _load_users_raw() -> list:
