@@ -161,18 +161,53 @@ async def handle_emoji_registration(update, context) -> None:
         await msg.reply_text("⚠️ Não foi possível extrair os IDs dos emojis.")
 
 
+async def handle_sticker_registration(update, context) -> None:
+    """Recebe um sticker em chat privado e responde com o file_id correto para este bot.
+
+    O file_id de sticker é único por bot — não é possível reutilizar file_ids de outros
+    bots ou do @RawDataBot. Envie o sticker aqui para obter o file_id válido.
+    """
+    msg = update.message
+    if not msg or not msg.sticker:
+        return
+
+    sticker  = msg.sticker
+    file_id  = sticker.file_id
+    emoji    = sticker.emoji or "—"
+    animated = sticker.is_animated
+    video    = sticker.is_video
+    tipo     = "Animado 🌀" if animated else ("Vídeo 🎬" if video else "Estático 🖼")
+
+    await msg.reply_text(
+        f"🎭 <b>Sticker recebido!</b>\n\n"
+        f"<b>File ID (copie isso):</b>\n"
+        f"<code>{file_id}</code>\n\n"
+        f"Tipo: {tipo}  |  Emoji: {emoji}\n\n"
+        f"Cole esse <code>file_id</code> no campo <b>Sticker</b> do condicional no dashboard.\n"
+        f"<i>⚠️ Este file_id funciona apenas com este bot específico.</i>",
+        parse_mode="HTML",
+    )
+
+
 def setup_handlers(app) -> None:
     """Registra handlers de comandos e mensagens no Application do Telegram."""
     from telegram.ext import MessageHandler, CommandHandler
     from telegram.ext import filters as tg_filters
 
     app.add_handler(CommandHandler("start", cmd_start))
-    # Captura qualquer mensagem privada (texto ou legenda de foto) que não seja comando
+
+    # Stickers em chat privado → retorna o file_id correto para este bot
     app.add_handler(MessageHandler(
-        tg_filters.ChatType.PRIVATE & ~tg_filters.COMMAND,
+        tg_filters.ChatType.PRIVATE & tg_filters.Sticker.ALL,
+        handle_sticker_registration,
+    ))
+
+    # Texto/foto em chat privado → registra emojis animados
+    app.add_handler(MessageHandler(
+        tg_filters.ChatType.PRIVATE & ~tg_filters.COMMAND & ~tg_filters.Sticker.ALL,
         handle_emoji_registration,
     ))
-    logger.info("Handlers de registro de emojis configurados")
+    logger.info("Handlers configurados: stickers + emojis animados")
 
 
 # ── Conversão para vídeo bolinha (formato quadrado) ──────────────────────────
