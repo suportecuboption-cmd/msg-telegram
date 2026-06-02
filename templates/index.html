@@ -100,6 +100,22 @@
     .asset-check { margin-left:auto;color:var(--accent2);font-size:.85rem;flex-shrink:0; }
     .badge-asset { display:inline-flex;align-items:center;gap:5px;font-size:.7rem;padding:3px 9px;border-radius:20px;background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.35);color:#c4b5fd;font-weight:600; }
 
+    /* ── Wizard (onboarding de passos) ── */
+    .wizard-nav { display:flex;align-items:flex-start;gap:0;margin-bottom:24px; }
+    .wiz-step-item { flex:1;display:flex;flex-direction:column;align-items:center;position:relative;cursor:pointer; }
+    .wiz-step-item::before { content:'';position:absolute;top:15px;left:-50%;width:100%;height:2px;background:var(--border);z-index:0; }
+    .wiz-step-item:first-child::before { display:none; }
+    .wiz-step-item.done::before, .wiz-step-item.active::before { background:var(--accent); }
+    .wiz-dot { width:32px;height:32px;border-radius:50%;background:var(--card2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:.82rem;font-weight:700;color:var(--text-muted);position:relative;z-index:1;transition:all .2s; }
+    .wiz-step-item.active .wiz-dot { border-color:var(--accent);background:var(--accent);color:#fff;box-shadow:0 0 0 4px rgba(124,58,237,.18); }
+    .wiz-step-item.done .wiz-dot { border-color:var(--accent);background:rgba(124,58,237,.25);color:#c4b5fd; }
+    .wiz-label { font-size:.72rem;margin-top:7px;color:var(--text-muted);text-align:center;font-weight:600;transition:color .2s;max-width:110px; }
+    .wiz-step-item.active .wiz-label { color:#fff; }
+    .wiz-step-item.done .wiz-label { color:#c4b5fd; }
+    .wizard-footer { display:flex;align-items:center;gap:8px; }
+    .wizard-footer .wiz-spacer { flex:1; }
+    @media (max-width:768px){ .wiz-label{ font-size:.62rem; } .wiz-dot{ width:28px;height:28px;font-size:.75rem; } }
+
     /* ── Condicional section ── */
     .cond-box { border-radius:12px;padding:16px;border:1px solid; }
     .cond-box-win  { border-color:rgba(16,185,129,.3); background:rgba(16,185,129,.04); }
@@ -734,10 +750,29 @@
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body p-4">
+
+        <!-- ── Indicador de passos ── -->
+        <div class="wizard-nav" id="wizard-nav">
+          <div class="wiz-step-item active" data-go="1" onclick="goWizStep(1)">
+            <div class="wiz-dot">1</div><div class="wiz-label">Conteúdo</div>
+          </div>
+          <div class="wiz-step-item" data-go="2" onclick="goWizStep(2)">
+            <div class="wiz-dot">2</div><div class="wiz-label">Agendamentos</div>
+          </div>
+          <div class="wiz-step-item" data-go="3" onclick="goWizStep(3)">
+            <div class="wiz-dot">3</div><div class="wiz-label">Verificação</div>
+          </div>
+          <div class="wiz-step-item" data-go="4" onclick="goWizStep(4)">
+            <div class="wiz-dot">4</div><div class="wiz-label">Condicionais</div>
+          </div>
+        </div>
+
+        <!-- ════ PASSO 1: Conteúdo ════ -->
+        <div class="wizard-step" data-step="1">
         <div class="row g-4">
 
           <!-- Coluna esquerda: conteúdo -->
-          <div class="col-lg-4">
+          <div class="col-lg-6">
             <div class="section-label">Conteúdo da Mensagem</div>
 
             <!-- Abas de tipo -->
@@ -823,56 +858,10 @@
               <input class="form-check-input" type="checkbox" id="f-active" checked>
               <label class="form-check-label" for="f-active">Mensagem ativa</label>
             </div>
-
-            <!-- ── Marcador de Candle ── -->
-            <div class="divider"></div>
-            <div class="section-label"><i class="fas fa-chart-bar me-1" style="color:#f59e0b;"></i>Marcador de Candle M1</div>
-            <!-- candle_hour é derivado automaticamente do horário do agendamento -->
-            <input type="hidden" id="f-candle-hour">
-            <input type="hidden" id="f-candle-symbol">
-
-            <!-- Seletor de ativo -->
-            <div class="mb-2">
-              <label class="form-label">Ativo a verificar</label>
-              <!-- Barra mostrando o ativo selecionado (clique para abrir o seletor) -->
-              <div class="asset-selected-bar empty" id="asset-selected-bar" onclick="_toggleAssetGrid()">
-                <div class="asset-icon" id="asset-sel-icon" style="background:rgba(255,255,255,.08);">📈</div>
-                <div class="asset-info">
-                  <span class="asset-name" id="asset-sel-name">Selecionar ativo</span>
-                  <span class="asset-symbol" id="asset-sel-symbol">clique para escolher</span>
-                </div>
-                <i class="fas fa-chevron-down asset-check" id="asset-sel-caret"></i>
-              </div>
-
-              <!-- Grid de seleção (escondido por padrão) -->
-              <div id="asset-picker" style="display:none;margin-top:8px;">
-                <input type="text" class="form-control form-control-sm asset-search" id="asset-search"
-                       placeholder="🔍 Buscar ativo..." oninput="_renderAssetGrid(this.value)">
-                <div class="asset-grid" id="asset-grid"></div>
-              </div>
-            </div>
-            <div id="f-candle-result-display" style="margin-bottom:8px;min-height:24px;"></div>
-
-            <!-- Toggle condicional -->
-            <div id="conditional-toggle-wrap">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="f-conditional-enabled" onchange="_onConditionalToggle()">
-                <label class="form-check-label" for="f-conditional-enabled" style="font-size:.85rem;font-weight:600;">
-                  Ativar verificação condicional
-                </label>
-              </div>
-              <div style="font-size:.72rem;color:var(--text-muted);margin-top:4px;">
-                <i class="fas fa-clock me-1"></i>O candle verificado é o do <b>horário de cada agendamento</b>.
-                O bot aguarda o fechamento da vela (60s + 10s buffer) e envia a mensagem WIN/LOSS automaticamente.
-              </div>
-              <div id="conditional-no-sched-warn" style="display:none;font-size:.72rem;color:#fbbf24;margin-top:6px;">
-                <i class="fas fa-exclamation-triangle me-1"></i>Adicione pelo menos um agendamento para a verificação funcionar.
-              </div>
-            </div>
           </div>
 
-          <!-- Coluna central: preview Telegram -->
-          <div class="col-lg-4">
+          <!-- Coluna direita: preview Telegram -->
+          <div class="col-lg-6">
             <div class="section-label">Preview Telegram</div>
             <div class="tg-preview-outer">
               <div class="tg-preview-topbar">
@@ -892,27 +881,89 @@
             </div>
           </div>
 
-          <!-- Coluna direita: agendamentos -->
-          <div class="col-lg-4">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <div class="section-label mb-0">Agendamentos por Grupo</div>
-              <button class="btn btn-xs btn-outline-primary" onclick="addSchedItem()">
-                <i class="fas fa-plus me-1"></i>Adicionar
-              </button>
+        </div><!-- /row passo 1 -->
+        </div><!-- ════ /PASSO 1 ════ -->
+
+        <!-- ════ PASSO 2: Agendamentos ════ -->
+        <div class="wizard-step" data-step="2" style="display:none;">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="section-label mb-0"><i class="fas fa-clock me-1" style="color:var(--accent2);"></i>Agendamentos por Grupo</div>
+            <button class="btn btn-xs btn-outline-primary" onclick="addSchedItem()">
+              <i class="fas fa-plus me-1"></i>Adicionar
+            </button>
+          </div>
+          <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:14px;">
+            Defina em quais grupos e horários esta mensagem será enviada. Cada agendamento pode ter dias, horário e botões próprios.
+          </div>
+          <div id="scheds-container">
+            <div class="empty" id="scheds-empty">
+              <i class="fas fa-clock"></i>
+              <div>Nenhum agendamento ainda.<br>Clique em "Adicionar" para criar.</div>
             </div>
-            <div id="scheds-container">
-              <div class="empty" id="scheds-empty">
-                <i class="fas fa-clock"></i>
-                <div>Nenhum agendamento ainda.<br>Clique em "Adicionar" para criar.</div>
+          </div>
+        </div><!-- ════ /PASSO 2 ════ -->
+
+        <!-- ════ PASSO 3: Verificação de Candle ════ -->
+        <div class="wizard-step" data-step="3" style="display:none;">
+          <div class="section-label"><i class="fas fa-chart-bar me-1" style="color:#f59e0b;"></i>Marcador de Candle M1</div>
+          <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:16px;">
+            Escolha o ativo cujo resultado (WIN/LOSS) será consultado na API após cada agendamento.
+          </div>
+          <input type="hidden" id="f-candle-hour">
+          <input type="hidden" id="f-candle-symbol">
+          <div class="row g-4">
+            <div class="col-lg-6">
+              <!-- Seletor de ativo -->
+              <div class="mb-2">
+                <label class="form-label">Ativo a verificar</label>
+                <div class="asset-selected-bar empty" id="asset-selected-bar" onclick="_toggleAssetGrid()">
+                  <div class="asset-icon" id="asset-sel-icon" style="background:rgba(255,255,255,.08);">📈</div>
+                  <div class="asset-info">
+                    <span class="asset-name" id="asset-sel-name">Selecionar ativo</span>
+                    <span class="asset-symbol" id="asset-sel-symbol">clique para escolher</span>
+                  </div>
+                  <i class="fas fa-chevron-down asset-check" id="asset-sel-caret"></i>
+                </div>
+                <div id="asset-picker" style="display:none;margin-top:8px;">
+                  <input type="text" class="form-control form-control-sm asset-search" id="asset-search"
+                         placeholder="🔍 Buscar ativo..." oninput="_renderAssetGrid(this.value)">
+                  <div class="asset-grid" id="asset-grid"></div>
+                </div>
+              </div>
+              <div id="f-candle-result-display" style="margin-bottom:8px;min-height:24px;"></div>
+            </div>
+            <div class="col-lg-6">
+              <!-- Toggle condicional -->
+              <div id="conditional-toggle-wrap">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="f-conditional-enabled" onchange="_onConditionalToggle()">
+                  <label class="form-check-label" for="f-conditional-enabled" style="font-size:.85rem;font-weight:600;">
+                    Ativar verificação condicional
+                  </label>
+                </div>
+                <div style="font-size:.72rem;color:var(--text-muted);margin-top:6px;">
+                  <i class="fas fa-clock me-1"></i>O candle verificado é o do <b>horário de cada agendamento</b>.
+                  O bot aguarda o fechamento da vela (60s + 10s buffer) e envia a mensagem WIN/LOSS automaticamente.
+                </div>
+                <div id="conditional-no-sched-warn" style="display:none;font-size:.72rem;color:#fbbf24;margin-top:8px;">
+                  <i class="fas fa-exclamation-triangle me-1"></i>Adicione pelo menos um agendamento (passo 2) para a verificação funcionar.
+                </div>
               </div>
             </div>
           </div>
+        </div><!-- ════ /PASSO 3 ════ -->
 
-        </div><!-- /row 3-cols -->
+        <!-- ════ PASSO 4: Mensagens Condicionais ════ -->
+        <div class="wizard-step" data-step="4" style="display:none;">
+          <!-- Aviso quando condicional desativado -->
+          <div id="cond-disabled-note" style="text-align:center;color:var(--text-muted);padding:36px 16px;">
+            <i class="fas fa-toggle-off" style="font-size:2.2rem;opacity:.35;display:block;margin-bottom:12px;"></i>
+            <div style="font-weight:600;margin-bottom:4px;">Verificação condicional desativada</div>
+            <div style="font-size:.82rem;">Volte ao <b>passo 3</b> e ative para configurar as mensagens WIN/LOSS — ou pule este passo.</div>
+          </div>
 
-        <!-- ── Seção Condicional (largura total, visível quando ativado) ── -->
-        <div id="conditional-full-section" style="display:none;margin-top:20px;">
-          <div class="divider" style="margin-top:0;"></div>
+          <!-- ── Seção Condicional ── -->
+          <div id="conditional-full-section" style="display:none;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
             <div class="section-label mb-0">🔀 Mensagens Condicionais</div>
             <span style="font-size:.78rem;color:var(--text-muted);">Enviadas após verificação da vela M1 (60s + 10s buffer)</span>
@@ -1066,12 +1117,22 @@
             </div><!-- /LOSS -->
 
           </div><!-- /row WIN-LOSS -->
-        </div><!-- /conditional-full-section -->
+          </div><!-- /conditional-full-section -->
+        </div><!-- ════ /PASSO 4 ════ -->
 
-      </div><!-- /modal-body row wrapper -->
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button class="btn btn-accent px-4" onclick="saveMessage()">
+      </div><!-- /modal-body -->
+      <div class="modal-footer wizard-footer">
+        <button class="btn btn-secondary" id="wiz-back" onclick="wizBack()">
+          <i class="fas fa-arrow-left me-2"></i>Voltar
+        </button>
+        <div class="wiz-spacer"></div>
+        <button class="btn btn-outline-secondary" id="wiz-skip" onclick="wizSkip()">
+          Pular <i class="fas fa-angles-right ms-1"></i>
+        </button>
+        <button class="btn btn-accent px-4" id="wiz-next" onclick="wizNext()">
+          Próximo<i class="fas fa-arrow-right ms-2"></i>
+        </button>
+        <button class="btn btn-accent px-4" id="wiz-save" onclick="saveMessage()" style="display:none;">
           <i class="fas fa-save me-2"></i>Salvar Mensagem
         </button>
       </div>
@@ -1391,6 +1452,47 @@ function renderMsgCard(msg) {
   </div>`;
 }
 
+// ═══════════════════════ WIZARD (4 passos) ═══════════════
+
+const _WIZ_TOTAL = 4;
+let _wizStep = 1;
+
+function _renderWizard() {
+  // Mostra/esconde os painéis de cada passo
+  document.querySelectorAll("#msgModal .wizard-step").forEach(el => {
+    el.style.display = (parseInt(el.dataset.step, 10) === _wizStep) ? "" : "none";
+  });
+
+  // Atualiza o indicador (dots)
+  document.querySelectorAll("#wizard-nav .wiz-step-item").forEach(el => {
+    const n = parseInt(el.dataset.go, 10);
+    el.classList.toggle("active", n === _wizStep);
+    el.classList.toggle("done", n < _wizStep);
+    const dot = el.querySelector(".wiz-dot");
+    if (n < _wizStep) dot.innerHTML = '<i class="fas fa-check"></i>';
+    else dot.textContent = n;
+  });
+
+  // Footer
+  const isFirst = _wizStep === 1;
+  const isLast  = _wizStep === _WIZ_TOTAL;
+  document.getElementById("wiz-back").style.visibility = isFirst ? "hidden" : "visible";
+  document.getElementById("wiz-skip").style.display = isLast ? "none" : "";
+  document.getElementById("wiz-next").style.display = isLast ? "none" : "";
+  document.getElementById("wiz-save").style.display = isLast ? "" : "none";
+
+  if (_wizStep === 1) updatePreview();
+}
+
+function goWizStep(n) {
+  _wizStep = Math.min(_WIZ_TOTAL, Math.max(1, n));
+  _renderWizard();
+}
+
+function wizNext() { goWizStep(_wizStep + 1); }
+function wizBack() { goWizStep(_wizStep - 1); }
+function wizSkip() { goWizStep(_wizStep + 1); }
+
 // ═════════════════════════ MODAL ADD/EDIT ════════════════
 
 function openAdd() {
@@ -1413,6 +1515,7 @@ function openAdd() {
   _resetConditionalForms();
   document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
   document.getElementById("scheds-empty").style.display = "";
+  goWizStep(1);
   getMsgModal().show();
 }
 
@@ -1458,6 +1561,7 @@ function openEdit(id) {
   document.getElementById("scheds-empty").style.display = hasScheds ? "none" : "";
   (msg.schedules || []).forEach(s => appendSchedItem(s));
   _updateCondSchedWarn();
+  goWizStep(1);
   getMsgModal().show();
 }
 
@@ -1778,6 +1882,8 @@ const _condType = { win: "text", loss: "text" };
 function _onConditionalToggle() {
   const enabled = document.getElementById("f-conditional-enabled").checked;
   document.getElementById("conditional-full-section").style.display = enabled ? "" : "none";
+  const note = document.getElementById("cond-disabled-note");
+  if (note) note.style.display = enabled ? "none" : "";
   _updateCondSchedWarn();
 }
 
