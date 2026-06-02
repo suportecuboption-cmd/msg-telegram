@@ -216,11 +216,19 @@ async def send_scheduled_message(
     message_name: str,
     parse_mode: Optional[str] = "HTML",
     video_note: Optional[str] = None,
+    conditional_enabled: bool = False,
+    candle_hour: Optional[str] = None,
+    conditional_win: Optional[dict] = None,
+    conditional_loss: Optional[dict] = None,
 ) -> None:
     """Envia uma mensagem agendada.
 
     Em modo HTML, emojis animados registrados são automaticamente envolvidos
     com <tg-emoji emoji-id="..."> antes do envio.
+
+    Se conditional_enabled=True e candle_hour estiver definido, dispara uma task
+    assíncrona que aguarda o fechamento da vela M1 (60s + 10s buffer) e envia
+    automaticamente a mensagem condicional WIN ou LOSS correspondente.
     """
     try:
         # Detecta vídeo salvo por engano no campo image
@@ -310,12 +318,150 @@ async def send_scheduled_message(
                 parse_mode=pm,
             )
         logger.info("Mensagem '%s' enviada para %s", message_name, chat_id)
+
+        # ── Verificação condicional pós-fechamento do candle ──────────────────
+        if conditional_enabled and candle_hour:
+            asyncio.create_task(
+                _check_and_send_conditional(
+                    bot=bot,
+                    chat_id=chat_id,
+                    message_name=message_name,
+                    candle_hour=candle_hour,
+                    conditional_win=conditional_win or {},
+                    conditional_loss=conditional_loss or {},
+                    button_keys=button_keys,
+                    config=config,
+                )
+            )
+
     except Exception as exc:
         logger.error("Erro ao enviar '%s' para %s: %s", message_name, chat_id, exc)
         raise
 
 
 _CANDLES_API_URL = "https://web-production-cdff3.up.railway.app/candles"
+_CANDLE_CLOSE_WAIT = 70   # 60s (duração M1) + 10s buffer
+
+
+async def _check_and_send_conditional(
+    bot: Bot,
+    chat_id: str,
+    message_name: str,
+    candle_hour: str,
+    conditional_win: dict,
+    conditional_loss: dict,
+    button_keys: list,
+    config: dict,
+    delay: int = _CANDLE_CLOSE_WAIT,
+) -> None:
+    """Aguarda o fechamento da vela M1 e envia a mensagem condicional WIN ou LOSS.
+
+    Fluxo:
+      1. Dorme ``delay`` segundos (padrão 70 = 60s vela + 10s buffer).
+      2. Chama a API de candles.
+      3. Localiza o candle de ``candle_hour`` (formato HH:MM).
+      4. Envia a mensagem condicional correspondente (WIN ou LOSS) para ``chat_id``.
+    """
+    await asyncio.sleep(delay)
+
+    def _fetch() -> dict:
+        with urllib.request.urlopen(_CANDLES_API_URL, timeout=10) as resp:
+            return json.loads(resp.read())
+
+    try:
+        data = await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        logger.warning("Condicional '%s': falha na API de candles após %ds: %s",
+                       message_name, delay, exc)
+        return
+
+    candle_map: dict = {}
+    for c in data.get("candles", []):
+        hora_hm  = c.get("hora", "")[:5]   # "HH:MM"
+        resultado = c.get("resultado")
+        if hora_hm and resultado:
+            candle_map[hora_hm] = resultado
+
+    result = candle_map.get(candle_hour)
+    if not result:
+        logger.info("Condicional '%s': candle %s não encontrado na janela da API (delay=%ds)",
+                    message_name, candle_hour, delay)
+        return
+
+    logger.info("Condicional '%s': candle %s → %s — enviando para %s",
+                message_name, candle_hour, result.upper(), chat_id)
+
+    cond_msg = conditional_win if result == "win" else conditional_loss
+    if not cond_msg:
+        return
+
+    has_content = any(cond_msg.get(k) for k in ("text", "image", "video_note", "sticker"))
+    if not has_content:
+        logger.info("Condicional '%s' [%s]: nenhum conteúdo configurado", message_name, result.upper())
+        return
+
+    text_c      = cond_msg.get("text", "") or ""
+    image_c     = cond_msg.get("image") or None
+    video_note_c = cond_msg.get("video_note") or None
+    sticker_c   = cond_msg.get("sticker") or None
+    parse_mode_c = cond_msg.get("parse_mode", "HTML")
+    show_buttons = cond_msg.get("show_buttons", True)
+
+    pm = parse_mode_c if parse_mode_c and parse_mode_c.lower() not in ("none", "") else None
+
+    if pm and pm.upper() == "HTML" and text_c:
+        import db as _db
+        emoji_map = _db.load_emoji_map()
+        if emoji_map:
+            text_c = preprocess_animated_emoji(text_c, emoji_map)
+
+    keyboard = build_keyboard(button_keys, config) if show_buttons else None
+
+    try:
+        if sticker_c:
+            # Envia sticker (file_id do Telegram)
+            await bot.send_sticker(chat_id=chat_id, sticker=sticker_c)
+            # Texto acompanhante opcional
+            if text_c:
+                await bot.send_message(chat_id=chat_id, text=text_c,
+                                       parse_mode=pm, reply_markup=keyboard)
+        elif video_note_c:
+            # Reutiliza a lógica completa de vídeo bolinha
+            await send_scheduled_message(
+                bot=bot, text="", chat_id=chat_id,
+                button_keys=[], config=config,
+                image=None, message_name=f"{message_name} [{result.upper()}]",
+                parse_mode="HTML", video_note=video_note_c,
+            )
+            return
+        elif image_c:
+            if image_c.startswith("http://") or image_c.startswith("https://"):
+                photo_data = image_c
+            else:
+                try:
+                    photo_data = open(image_c, "rb")
+                except OSError:
+                    logger.warning("Condicional: imagem não encontrada: %s", image_c)
+                    photo_data = None
+            if photo_data:
+                await bot.send_photo(
+                    chat_id=chat_id, photo=photo_data,
+                    caption=text_c or None, parse_mode=pm, reply_markup=keyboard,
+                )
+                if hasattr(photo_data, "close"):
+                    photo_data.close()
+            elif text_c:
+                await bot.send_message(chat_id=chat_id, text=text_c,
+                                       parse_mode=pm, reply_markup=keyboard)
+        elif text_c:
+            await bot.send_message(chat_id=chat_id, text=text_c,
+                                   parse_mode=pm, reply_markup=keyboard)
+
+        logger.info("Condicional [%s] '%s' enviado para %s", result.upper(), message_name, chat_id)
+
+    except Exception as exc:
+        logger.error("Erro ao enviar condicional [%s] '%s' para %s: %s",
+                     result.upper(), message_name, chat_id, exc)
 
 
 async def check_candle_results() -> None:
@@ -417,7 +563,11 @@ def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None
                 args=[bot, message["text"], group["id"], button_keys, config,
                       message.get("image"), message.get("name", ""),
                       message.get("parse_mode", "HTML"),
-                      message.get("video_note")],
+                      message.get("video_note"),
+                      bool(message.get("conditional_enabled", False)),
+                      message.get("candle_hour"),
+                      message.get("conditional_win") or {},
+                      message.get("conditional_loss") or {}],
                 id=job_id,
                 replace_existing=True,
                 misfire_grace_time=300,

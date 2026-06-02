@@ -128,6 +128,15 @@ def init_db() -> None:
         cur.execute(
             "ALTER TABLE messages ADD COLUMN IF NOT EXISTS candle_result TEXT"
         )
+        cur.execute(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS conditional_enabled BOOLEAN DEFAULT FALSE"
+        )
+        cur.execute(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS conditional_win JSONB"
+        )
+        cur.execute(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS conditional_loss JSONB"
+        )
     logger.info("Banco de dados PostgreSQL pronto")
 
 
@@ -271,9 +280,14 @@ def load_messages() -> dict:
 
     with _conn() as c:
         cur = c.cursor()
-        cur.execute("SELECT id, name, text, image, video_note, active, parse_mode, candle_hour, candle_result FROM messages ORDER BY name")
+        cur.execute(
+            "SELECT id, name, text, image, video_note, active, parse_mode, "
+            "candle_hour, candle_result, conditional_enabled, conditional_win, conditional_loss "
+            "FROM messages ORDER BY name"
+        )
         msgs = []
-        for mid, name, text, image, video_note, active, parse_mode, candle_hour, candle_result in cur.fetchall():
+        for (mid, name, text, image, video_note, active, parse_mode,
+             candle_hour, candle_result, cond_en, cond_win, cond_loss) in cur.fetchall():
             cur.execute(
                 "SELECT id, group_key, time, days, buttons, active "
                 "FROM schedules WHERE message_id=%s ORDER BY time",
@@ -284,10 +298,15 @@ def load_messages() -> dict:
                  "days": r[3], "buttons": r[4], "active": r[5]}
                 for r in cur.fetchall()
             ]
-            msgs.append({"id": mid, "name": name, "text": text, "image": image,
-                          "video_note": video_note, "active": active,
-                          "parse_mode": parse_mode or "HTML", "schedules": schedules,
-                          "candle_hour": candle_hour, "candle_result": candle_result})
+            msgs.append({
+                "id": mid, "name": name, "text": text, "image": image,
+                "video_note": video_note, "active": active,
+                "parse_mode": parse_mode or "HTML", "schedules": schedules,
+                "candle_hour": candle_hour, "candle_result": candle_result,
+                "conditional_enabled": bool(cond_en),
+                "conditional_win":  cond_win  if isinstance(cond_win, dict)  else (cond_win  or {}),
+                "conditional_loss": cond_loss if isinstance(cond_loss, dict) else (cond_loss or {}),
+            })
     return {"messages": msgs}
 
 
@@ -302,11 +321,16 @@ def save_messages(data: dict) -> None:
         cur.execute("DELETE FROM messages")
         for msg in data.get("messages", []):
             cur.execute(
-                "INSERT INTO messages(id,name,text,image,video_note,active,parse_mode,candle_hour,candle_result) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "INSERT INTO messages(id,name,text,image,video_note,active,parse_mode,"
+                "candle_hour,candle_result,conditional_enabled,conditional_win,conditional_loss) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (msg["id"], msg.get("name",""), msg.get("text",""),
                  msg.get("image"), msg.get("video_note"),
                  msg.get("active", True), msg.get("parse_mode", "HTML"),
-                 msg.get("candle_hour"), msg.get("candle_result"))
+                 msg.get("candle_hour"), msg.get("candle_result"),
+                 bool(msg.get("conditional_enabled", False)),
+                 json.dumps(msg.get("conditional_win") or {}),
+                 json.dumps(msg.get("conditional_loss") or {}))
             )
             for s in msg.get("schedules", []):
                 cur.execute(
@@ -335,17 +359,24 @@ def upsert_message(msg: dict) -> dict:
     with _conn() as c:
         cur = c.cursor()
         cur.execute(
-            "INSERT INTO messages(id,name,text,image,video_note,active,parse_mode,candle_hour) "
-            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s) "
+            "INSERT INTO messages(id,name,text,image,video_note,active,parse_mode,"
+            "candle_hour,conditional_enabled,conditional_win,conditional_loss) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, text=EXCLUDED.text, "
             "image=EXCLUDED.image, video_note=EXCLUDED.video_note, "
             "active=EXCLUDED.active, parse_mode=EXCLUDED.parse_mode, "
-            "candle_hour=EXCLUDED.candle_hour",
-            # candle_result é intencionalmente excluído do UPDATE — gerenciado por update_candle_result()
+            "candle_hour=EXCLUDED.candle_hour, "
+            "conditional_enabled=EXCLUDED.conditional_enabled, "
+            "conditional_win=EXCLUDED.conditional_win, "
+            "conditional_loss=EXCLUDED.conditional_loss",
+            # candle_result excluído do UPDATE — gerenciado por update_candle_result()
             (msg["id"], msg.get("name",""), msg.get("text",""),
              msg.get("image"), msg.get("video_note"),
              msg.get("active", True), msg.get("parse_mode", "HTML"),
-             msg.get("candle_hour") or None)
+             msg.get("candle_hour") or None,
+             bool(msg.get("conditional_enabled", False)),
+             json.dumps(msg.get("conditional_win") or {}),
+             json.dumps(msg.get("conditional_loss") or {}))
         )
         cur.execute("DELETE FROM schedules WHERE message_id=%s", (msg["id"],))
         for s in msg.get("schedules", []):

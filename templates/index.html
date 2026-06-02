@@ -82,6 +82,15 @@
     .btn-candle-clear { background:rgba(255,255,255,.07);color:var(--text-muted);border:1px solid var(--border); }
     .btn-candle-clear:hover { background:rgba(255,255,255,.13); }
 
+    /* ── Condicional section ── */
+    .cond-box { border-radius:12px;padding:16px;border:1px solid; }
+    .cond-box-win  { border-color:rgba(16,185,129,.3); background:rgba(16,185,129,.04); }
+    .cond-box-loss { border-color:rgba(239,68,68,.28);  background:rgba(239,68,68,.04); }
+    .cond-header { display:flex;align-items:center;gap:10px;margin-bottom:14px; }
+    .cond-type-tabs { display:flex;gap:4px;margin-bottom:12px; }
+    .cond-type-tab { flex:1;padding:5px 6px;border-radius:7px;border:1px solid var(--border);background:transparent;color:rgba(255,255,255,.4);font-size:.75rem;cursor:pointer;text-align:center;transition:all .15s; }
+    .cond-type-tab.active { background:rgba(124,58,237,.2);border-color:var(--accent);color:#c4b5fd; }
+
     /* ── Status ── */
     .status-on  { color: var(--success); font-size: .75rem; }
     .status-off { color: #6b7280;        font-size: .75rem; }
@@ -799,15 +808,28 @@
 
             <!-- ── Marcador de Candle ── -->
             <div class="divider"></div>
-            <div class="section-label"><i class="fas fa-chart-candlestick me-1" style="color:#f59e0b;"></i>Marcador de Candle M1</div>
+            <div class="section-label"><i class="fas fa-chart-bar me-1" style="color:#f59e0b;"></i>Marcador de Candle M1</div>
             <div class="mb-2">
               <label class="form-label">Horário do candle</label>
-              <input type="time" class="form-control form-control-sm" id="f-candle-hour" step="60">
+              <input type="time" class="form-control form-control-sm" id="f-candle-hour" step="60" oninput="_onCandleHourChange()">
               <div style="font-size:.72rem;color:var(--text-muted);margin-top:5px;">
-                <i class="fas fa-info-circle me-1"></i>O resultado WIN/LOSS é verificado automaticamente a cada minuto na API de candles.
+                <i class="fas fa-info-circle me-1"></i>O resultado WIN/LOSS é verificado automaticamente a cada minuto.
               </div>
             </div>
             <div id="f-candle-result-display" style="margin-bottom:8px;min-height:24px;"></div>
+
+            <!-- Toggle condicional (só aparece quando candle_hour está preenchido) -->
+            <div id="conditional-toggle-wrap" style="display:none;">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="f-conditional-enabled" onchange="_onConditionalToggle()">
+                <label class="form-check-label" for="f-conditional-enabled" style="font-size:.85rem;font-weight:600;">
+                  Ativar verificação condicional
+                </label>
+              </div>
+              <div style="font-size:.72rem;color:var(--text-muted);margin-top:4px;">
+                <i class="fas fa-clock me-1"></i>O bot aguarda o fechamento da vela (60s + 10s buffer) e envia a mensagem abaixo automaticamente.
+              </div>
+            </div>
           </div>
 
           <!-- Coluna central: preview Telegram -->
@@ -847,8 +869,167 @@
             </div>
           </div>
 
-        </div>
-      </div>
+        </div><!-- /row 3-cols -->
+
+        <!-- ── Seção Condicional (largura total, visível quando ativado) ── -->
+        <div id="conditional-full-section" style="display:none;margin-top:20px;">
+          <div class="divider" style="margin-top:0;"></div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+            <div class="section-label mb-0">🔀 Mensagens Condicionais</div>
+            <span style="font-size:.78rem;color:var(--text-muted);">Enviadas após verificação da vela M1 (60s + 10s buffer)</span>
+          </div>
+          <div class="row g-4">
+
+            <!-- WIN column -->
+            <div class="col-md-6">
+              <div class="cond-box cond-box-win">
+                <div class="cond-header">
+                  <span class="badge-win" style="font-size:.8rem;padding:5px 12px;"><i class="fas fa-check-circle me-1"></i>WIN</span>
+                  <span style="font-size:.8rem;color:rgba(52,211,153,.7);">Enviar quando o candle fechar como WIN</span>
+                </div>
+                <!-- Tipo -->
+                <div class="cond-type-tabs">
+                  <button class="cond-type-tab active" id="cwin-tab-text"    onclick="setCondType('win','text')">📝 Texto/Foto</button>
+                  <button class="cond-type-tab"        id="cwin-tab-vidnote" onclick="setCondType('win','vidnote')">🔵 Vídeo</button>
+                  <button class="cond-type-tab"        id="cwin-tab-sticker" onclick="setCondType('win','sticker')">🎭 Sticker</button>
+                </div>
+                <!-- Texto/Foto -->
+                <div id="cwin-area-text">
+                  <div class="mb-2">
+                    <label class="form-label">Parse Mode</label>
+                    <select class="form-select form-select-sm" id="cwin-parse-mode">
+                      <option value="HTML">HTML</option>
+                      <option value="MarkdownV2">MarkdownV2</option>
+                      <option value="none">Sem formatação</option>
+                    </select>
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label">Texto <span style="color:var(--text-muted);font-size:.74rem;">(opcional)</span></label>
+                    <textarea class="form-control" id="cwin-text" rows="4" placeholder="🎉 WIN! Parabéns pelo resultado..."></textarea>
+                  </div>
+                  <div>
+                    <label class="form-label">Imagem <span style="color:var(--text-muted);font-size:.74rem;">(URL ou upload)</span></label>
+                    <input type="url" class="form-control form-control-sm" id="cwin-image" placeholder="https://... ou deixe vazio">
+                    <div style="margin-top:6px;">
+                      <input type="file" id="cwin-image-file" accept="image/*" style="display:none;">
+                      <button type="button" class="btn btn-xs btn-outline-secondary" onclick="document.getElementById('cwin-image-file').click()">
+                        <i class="fas fa-cloud-upload-alt me-1"></i>Upload imagem
+                      </button>
+                      <span id="cwin-img-status" style="font-size:.72rem;margin-left:8px;display:none;"></span>
+                    </div>
+                  </div>
+                </div>
+                <!-- Vídeo bolinha -->
+                <div id="cwin-area-vidnote" style="display:none;">
+                  <label class="form-label">Vídeo bolinha</label>
+                  <div class="vidnote-upload-zone" id="cwin-vidzone" onclick="document.getElementById('cwin-vidnote-file').click()" style="padding:14px;">
+                    <div id="cwin-vidzone-ph" style="text-align:center;">
+                      <i class="fas fa-circle-play" style="font-size:1.4rem;opacity:.3;display:block;margin-bottom:4px;"></i>
+                      <div style="font-size:.8rem;color:rgba(255,255,255,.35);">Clique para enviar vídeo</div>
+                    </div>
+                    <div id="cwin-vidzone-info" style="display:none;text-align:center;font-size:.78rem;color:rgba(255,255,255,.55);"></div>
+                  </div>
+                  <input type="file" id="cwin-vidnote-file" accept="video/*" style="display:none;">
+                  <input type="hidden" id="cwin-video-note">
+                  <span id="cwin-vid-status" style="font-size:.72rem;display:none;margin-top:4px;display:block;"></span>
+                </div>
+                <!-- Sticker -->
+                <div id="cwin-area-sticker" style="display:none;">
+                  <div class="mb-2">
+                    <label class="form-label">Sticker File ID</label>
+                    <input type="text" class="form-control" id="cwin-sticker" placeholder="CAACAgIA..." style="font-family:monospace;font-size:.83rem;">
+                    <div style="font-size:.72rem;color:var(--text-muted);margin-top:4px;"><i class="fas fa-info-circle me-1"></i>Copie o file_id via @RawDataBot ou @sticker</div>
+                  </div>
+                  <div>
+                    <label class="form-label">Texto acompanhante <span style="color:var(--text-muted);font-size:.74rem;">(opcional)</span></label>
+                    <textarea class="form-control" id="cwin-sticker-text" rows="2" placeholder="Mensagem após o sticker..."></textarea>
+                  </div>
+                </div>
+                <!-- Mostrar botões? -->
+                <div class="form-check form-switch mt-3">
+                  <input class="form-check-input" type="checkbox" id="cwin-show-buttons" checked>
+                  <label class="form-check-label" for="cwin-show-buttons" style="font-size:.82rem;">Exibir botões inline</label>
+                </div>
+              </div>
+            </div><!-- /WIN -->
+
+            <!-- LOSS column -->
+            <div class="col-md-6">
+              <div class="cond-box cond-box-loss">
+                <div class="cond-header">
+                  <span class="badge-loss" style="font-size:.8rem;padding:5px 12px;"><i class="fas fa-times-circle me-1"></i>LOSS</span>
+                  <span style="font-size:.8rem;color:rgba(248,113,113,.7);">Enviar quando o candle fechar como LOSS</span>
+                </div>
+                <!-- Tipo -->
+                <div class="cond-type-tabs">
+                  <button class="cond-type-tab active" id="closs-tab-text"    onclick="setCondType('loss','text')">📝 Texto/Foto</button>
+                  <button class="cond-type-tab"        id="closs-tab-vidnote" onclick="setCondType('loss','vidnote')">🔵 Vídeo</button>
+                  <button class="cond-type-tab"        id="closs-tab-sticker" onclick="setCondType('loss','sticker')">🎭 Sticker</button>
+                </div>
+                <!-- Texto/Foto -->
+                <div id="closs-area-text">
+                  <div class="mb-2">
+                    <label class="form-label">Parse Mode</label>
+                    <select class="form-select form-select-sm" id="closs-parse-mode">
+                      <option value="HTML">HTML</option>
+                      <option value="MarkdownV2">MarkdownV2</option>
+                      <option value="none">Sem formatação</option>
+                    </select>
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label">Texto <span style="color:var(--text-muted);font-size:.74rem;">(opcional)</span></label>
+                    <textarea class="form-control" id="closs-text" rows="4" placeholder="😔 LOSS. Próxima operação será melhor..."></textarea>
+                  </div>
+                  <div>
+                    <label class="form-label">Imagem <span style="color:var(--text-muted);font-size:.74rem;">(URL ou upload)</span></label>
+                    <input type="url" class="form-control form-control-sm" id="closs-image" placeholder="https://... ou deixe vazio">
+                    <div style="margin-top:6px;">
+                      <input type="file" id="closs-image-file" accept="image/*" style="display:none;">
+                      <button type="button" class="btn btn-xs btn-outline-secondary" onclick="document.getElementById('closs-image-file').click()">
+                        <i class="fas fa-cloud-upload-alt me-1"></i>Upload imagem
+                      </button>
+                      <span id="closs-img-status" style="font-size:.72rem;margin-left:8px;display:none;"></span>
+                    </div>
+                  </div>
+                </div>
+                <!-- Vídeo bolinha -->
+                <div id="closs-area-vidnote" style="display:none;">
+                  <label class="form-label">Vídeo bolinha</label>
+                  <div class="vidnote-upload-zone" id="closs-vidzone" onclick="document.getElementById('closs-vidnote-file').click()" style="padding:14px;">
+                    <div id="closs-vidzone-ph" style="text-align:center;">
+                      <i class="fas fa-circle-play" style="font-size:1.4rem;opacity:.3;display:block;margin-bottom:4px;"></i>
+                      <div style="font-size:.8rem;color:rgba(255,255,255,.35);">Clique para enviar vídeo</div>
+                    </div>
+                    <div id="closs-vidzone-info" style="display:none;text-align:center;font-size:.78rem;color:rgba(255,255,255,.55);"></div>
+                  </div>
+                  <input type="file" id="closs-vidnote-file" accept="video/*" style="display:none;">
+                  <input type="hidden" id="closs-video-note">
+                  <span id="closs-vid-status" style="font-size:.72rem;display:none;margin-top:4px;display:block;"></span>
+                </div>
+                <!-- Sticker -->
+                <div id="closs-area-sticker" style="display:none;">
+                  <div class="mb-2">
+                    <label class="form-label">Sticker File ID</label>
+                    <input type="text" class="form-control" id="closs-sticker" placeholder="CAACAgIA..." style="font-family:monospace;font-size:.83rem;">
+                    <div style="font-size:.72rem;color:var(--text-muted);margin-top:4px;"><i class="fas fa-info-circle me-1"></i>Copie o file_id via @RawDataBot ou @sticker</div>
+                  </div>
+                  <div>
+                    <label class="form-label">Texto acompanhante <span style="color:var(--text-muted);font-size:.74rem;">(opcional)</span></label>
+                    <textarea class="form-control" id="closs-sticker-text" rows="2" placeholder="Mensagem após o sticker..."></textarea>
+                  </div>
+                </div>
+                <!-- Mostrar botões? -->
+                <div class="form-check form-switch mt-3">
+                  <input class="form-check-input" type="checkbox" id="closs-show-buttons" checked>
+                  <label class="form-check-label" for="closs-show-buttons" style="font-size:.82rem;">Exibir botões inline</label>
+                </div>
+              </div>
+            </div><!-- /LOSS -->
+
+          </div><!-- /row WIN-LOSS -->
+        </div><!-- /conditional-full-section -->
+
+      </div><!-- /modal-body row wrapper -->
       <div class="modal-footer">
         <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
         <button class="btn btn-accent px-4" onclick="saveMessage()">
@@ -1135,6 +1316,7 @@ function openAdd() {
   onParseModeChange();
   document.getElementById("f-candle-hour").value = "";
   document.getElementById("f-candle-result-display").innerHTML = "";
+  _resetConditionalForms();
   document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
   document.getElementById("scheds-empty").style.display = "";
   getMsgModal().show();
@@ -1171,9 +1353,11 @@ function openEdit(id) {
   document.getElementById("f-parse-mode").value = msg.parse_mode || "HTML";
   onParseModeChange();
 
-  // ── Candle marker ──
+  // ── Candle marker + condicional ──
   document.getElementById("f-candle-hour").value = msg.candle_hour || "";
   _renderModalCandleResult(msg.candle_result);
+  _onCandleHourChange();
+  _populateConditionalForms(msg);
 
   document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
   const hasScheds = (msg.schedules || []).length > 0;
@@ -1287,15 +1471,19 @@ async function saveMessage() {
     toast("Envie um vídeo bolinha antes de salvar", "danger"); return;
   }
 
+  const condEnabled = document.getElementById("f-conditional-enabled").checked;
   const payload = {
-    name:        document.getElementById("f-name").value.trim() || "Sem nome",
-    text:        isVidnote ? "" : text,
-    image:       isVidnote ? null : (document.getElementById("f-image").value.trim() || null),
-    video_note:  isVidnote ? (document.getElementById("f-video-note").value || null) : null,
-    active:      document.getElementById("f-active").checked,
-    parse_mode:  document.getElementById("f-parse-mode").value,
-    schedules:   collectSchedules(),
-    candle_hour: document.getElementById("f-candle-hour").value || null,
+    name:                document.getElementById("f-name").value.trim() || "Sem nome",
+    text:                isVidnote ? "" : text,
+    image:               isVidnote ? null : (document.getElementById("f-image").value.trim() || null),
+    video_note:          isVidnote ? (document.getElementById("f-video-note").value || null) : null,
+    active:              document.getElementById("f-active").checked,
+    parse_mode:          document.getElementById("f-parse-mode").value,
+    schedules:           collectSchedules(),
+    candle_hour:         document.getElementById("f-candle-hour").value || null,
+    conditional_enabled: condEnabled,
+    conditional_win:     condEnabled ? _collectCondForm("win")  : {},
+    conditional_loss:    condEnabled ? _collectCondForm("loss") : {},
   };
 
   const url    = editingId ? `/api/messages/${editingId}` : "/api/messages";
@@ -1359,6 +1547,164 @@ async function _clearModalCandleResultNow() {
   if (!editingId) return;
   await setCandleResult(editingId, null);
   _renderModalCandleResult(null);
+}
+
+// ═══════════════════ CONDICIONAL — UI ════════════════════
+
+// Tracker dos tipos selecionados para cada lado
+const _condType = { win: "text", loss: "text" };
+
+function _onCandleHourChange() {
+  const h = document.getElementById("f-candle-hour").value;
+  const wrap = document.getElementById("conditional-toggle-wrap");
+  if (wrap) wrap.style.display = h ? "" : "none";
+  if (!h) {
+    document.getElementById("f-conditional-enabled").checked = false;
+    _onConditionalToggle();
+  }
+}
+
+function _onConditionalToggle() {
+  const enabled = document.getElementById("f-conditional-enabled").checked;
+  document.getElementById("conditional-full-section").style.display = enabled ? "" : "none";
+}
+
+function setCondType(side, type) {
+  _condType[side] = type;
+  const tabs = ["text", "vidnote", "sticker"];
+  tabs.forEach(t => {
+    const btn  = document.getElementById(`c${side}-tab-${t}`);
+    const area = document.getElementById(`c${side}-area-${t}`);
+    if (btn)  btn.classList.toggle("active", t === type);
+    if (area) area.style.display = t === type ? "" : "none";
+  });
+}
+
+function _resetCondSide(side) {
+  // text/foto
+  document.getElementById(`c${side}-parse-mode`).value = "HTML";
+  document.getElementById(`c${side}-text`).value = "";
+  document.getElementById(`c${side}-image`).value = "";
+  const imgSt = document.getElementById(`c${side}-img-status`);
+  if (imgSt) { imgSt.style.display = "none"; imgSt.textContent = ""; }
+  // vidnote
+  document.getElementById(`c${side}-video-note`).value = "";
+  const vzPh   = document.getElementById(`c${side}-vidzone-ph`);
+  const vzInfo = document.getElementById(`c${side}-vidzone-info`);
+  if (vzPh)   vzPh.style.display = "";
+  if (vzInfo) { vzInfo.style.display = "none"; vzInfo.textContent = ""; }
+  const vz = document.getElementById(`c${side}-vidzone`);
+  if (vz) vz.classList.remove("has-video");
+  const vidSt = document.getElementById(`c${side}-vid-status`);
+  if (vidSt) { vidSt.style.display = "none"; vidSt.textContent = ""; }
+  // sticker
+  document.getElementById(`c${side}-sticker`).value = "";
+  if (document.getElementById(`c${side}-sticker-text`))
+    document.getElementById(`c${side}-sticker-text`).value = "";
+  // buttons
+  document.getElementById(`c${side}-show-buttons`).checked = true;
+  // reset type tab to text
+  setCondType(side, "text");
+}
+
+function _resetConditionalForms() {
+  document.getElementById("f-conditional-enabled").checked = false;
+  document.getElementById("conditional-full-section").style.display = "none";
+  document.getElementById("conditional-toggle-wrap").style.display = "none";
+  _resetCondSide("win");
+  _resetCondSide("loss");
+}
+
+function _populateConditionalForms(msg) {
+  const enabled = msg.conditional_enabled === true;
+  document.getElementById("f-conditional-enabled").checked = enabled;
+  document.getElementById("conditional-full-section").style.display = enabled ? "" : "none";
+  _fillCondSide("win",  msg.conditional_win  || {});
+  _fillCondSide("loss", msg.conditional_loss || {});
+}
+
+function _fillCondSide(side, data) {
+  // parse mode & text
+  document.getElementById(`c${side}-parse-mode`).value = data.parse_mode || "HTML";
+  document.getElementById(`c${side}-text`).value = data.text || "";
+  document.getElementById(`c${side}-image`).value = data.image || "";
+  // video_note
+  document.getElementById(`c${side}-video-note`).value = data.video_note || "";
+  if (data.video_note) {
+    const vzPh   = document.getElementById(`c${side}-vidzone-ph`);
+    const vzInfo = document.getElementById(`c${side}-vidzone-info`);
+    if (vzPh) vzPh.style.display = "none";
+    if (vzInfo) {
+      vzInfo.style.display = "";
+      vzInfo.textContent   = data.video_note.split("/").pop();
+    }
+    const vz = document.getElementById(`c${side}-vidzone`);
+    if (vz) vz.classList.add("has-video");
+  }
+  // sticker
+  if (document.getElementById(`c${side}-sticker`))
+    document.getElementById(`c${side}-sticker`).value = data.sticker || "";
+  if (document.getElementById(`c${side}-sticker-text`))
+    document.getElementById(`c${side}-sticker-text`).value = data.sticker_text || "";
+  // buttons
+  document.getElementById(`c${side}-show-buttons`).checked = data.show_buttons !== false;
+  // set type tab
+  let type = "text";
+  if (data.video_note) type = "vidnote";
+  else if (data.sticker) type = "sticker";
+  setCondType(side, type);
+}
+
+function _collectCondForm(side) {
+  const type = _condType[side] || "text";
+  const out = {
+    parse_mode:   document.getElementById(`c${side}-parse-mode`).value,
+    show_buttons: document.getElementById(`c${side}-show-buttons`).checked,
+  };
+  if (type === "text") {
+    out.text   = document.getElementById(`c${side}-text`).value.trim() || null;
+    out.image  = document.getElementById(`c${side}-image`).value.trim() || null;
+  } else if (type === "vidnote") {
+    out.video_note = document.getElementById(`c${side}-video-note`).value || null;
+  } else if (type === "sticker") {
+    out.sticker      = document.getElementById(`c${side}-sticker`).value.trim() || null;
+    out.sticker_text = document.getElementById(`c${side}-sticker-text`).value.trim() || null;
+    out.text         = out.sticker_text || null;
+  }
+  return out;
+}
+
+// ── Upload handlers para condicionais ──────────────────────
+async function _uploadCondMedia(side, type, file) {
+  const statusId = type === "image" ? `c${side}-img-status` : `c${side}-vid-status`;
+  const statusEl = document.getElementById(statusId);
+  if (statusEl) { statusEl.style.display = ""; statusEl.style.color = "rgba(255,255,255,.4)"; statusEl.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Enviando...'; }
+
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const r = await fetch("/api/upload", { method: "POST", body: fd });
+    const data = await r.json();
+    if (r.ok) {
+      if (type === "image") {
+        document.getElementById(`c${side}-image`).value = data.path;
+        if (statusEl) { statusEl.style.color = "var(--success)"; statusEl.innerHTML = `<i class="fas fa-check me-1"></i>${file.name}`; }
+      } else {
+        document.getElementById(`c${side}-video-note`).value = data.path;
+        const vzPh   = document.getElementById(`c${side}-vidzone-ph`);
+        const vzInfo = document.getElementById(`c${side}-vidzone-info`);
+        if (vzPh)   vzPh.style.display = "none";
+        if (vzInfo) { vzInfo.style.display = ""; vzInfo.textContent = file.name; }
+        const vz = document.getElementById(`c${side}-vidzone`);
+        if (vz) vz.classList.add("has-video");
+        if (statusEl) { statusEl.style.color = "var(--success)"; statusEl.innerHTML = `<i class="fas fa-check me-1"></i>Vídeo enviado!`; }
+      }
+    } else {
+      if (statusEl) { statusEl.style.color = "var(--danger)"; statusEl.innerHTML = `<i class="fas fa-times me-1"></i>${data.error || "Erro"}`; }
+    }
+  } catch {
+    if (statusEl) { statusEl.style.color = "var(--danger)"; statusEl.innerHTML = '<i class="fas fa-times me-1"></i>Erro de conexão'; }
+  }
 }
 
 // ═════════════════════════ SEND NOW ══════════════════════
@@ -2230,10 +2576,26 @@ async function deleteUser(id, username) {
 }
 
 // ─── Start ────────────────────────────────────────────────
-// Inicializa popovers do Bootstrap (usado no botão de ajuda dos emojis animados)
 document.addEventListener("DOMContentLoaded", () => {
+  // Popovers Bootstrap
   document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => {
     bootstrap.Popover.getOrCreateInstance(el);
+  });
+
+  // ── Uploads de imagem condicional (WIN e LOSS) ──
+  ["win", "loss"].forEach(side => {
+    // Imagem
+    document.getElementById(`c${side}-image-file`).addEventListener("change", async function () {
+      if (!this.files[0]) return;
+      await _uploadCondMedia(side, "image", this.files[0]);
+      this.value = "";
+    });
+    // Vídeo bolinha
+    document.getElementById(`c${side}-vidnote-file`).addEventListener("change", async function () {
+      if (!this.files[0]) return;
+      await _uploadCondMedia(side, "video", this.files[0]);
+      this.value = "";
+    });
   });
 });
 
