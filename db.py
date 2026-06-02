@@ -22,6 +22,7 @@ _CONFIG_FILE     = _DATA / "config.json"
 _MESSAGES_FILE   = _DATA / "messages.json"
 _EMOJI_MAP_FILE  = _DATA / "emoji_map.json"
 _USERS_FILE      = _DATA / "users.json"
+_FLOW_ORDER_FILE = _DATA / "flow_order.json"
 _SECRET_KEY_FILE = _DATA / ".secret_key"
 
 _pool = None
@@ -531,6 +532,44 @@ def delete_emoji(emoji_char: str) -> None:
         return
     with _conn() as c:
         c.cursor().execute("DELETE FROM emoji_map WHERE emoji_char=%s", (emoji_char,))
+
+
+# ── Ordem do fluxograma por grupo ──────────────────────────────────────────────
+
+def load_flow_order() -> dict:
+    """Retorna {group_key: [message_id, ...]} com a ordem manual do fluxo."""
+    if not use_postgres():
+        if not _FLOW_ORDER_FILE.exists():
+            return {}
+        try:
+            return json.loads(_FLOW_ORDER_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    with _conn() as c:
+        cur = c.cursor()
+        cur.execute("SELECT value FROM settings WHERE key='flow_order'")
+        row = cur.fetchone()
+    if not row or not row[0]:
+        return {}
+    try:
+        data = json.loads(row[0])
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_flow_order(data: dict) -> None:
+    """Persiste {group_key: [message_id, ...]}."""
+    payload = json.dumps(data or {}, ensure_ascii=False)
+    if not use_postgres():
+        _FLOW_ORDER_FILE.write_text(payload, encoding="utf-8")
+        return
+    with _conn() as c:
+        c.cursor().execute(
+            "INSERT INTO settings(key,value) VALUES('flow_order',%s) "
+            "ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+            (payload,),
+        )
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────

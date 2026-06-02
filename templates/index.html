@@ -33,12 +33,14 @@
       padding: 22px 18px 16px; border-bottom: 1px solid var(--border);
     }
     .logo-icon {
-      width: 36px; height: 36px; border-radius: 10px;
-      background: linear-gradient(135deg, var(--accent), #4f46e5);
+      width: 40px; height: 40px; border-radius: 12px;
+      background: linear-gradient(135deg, #2aabee, #229ed9);
       display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      box-shadow: 0 4px 14px rgba(42,171,238,.35);
     }
-    .logo-icon i { color: white; font-size: 1rem; }
-    .logo-text { font-weight: 700; font-size: 1rem; color: white; }
+    .logo-icon i { color: white; font-size: 1.25rem; }
+    .logo-text { font-weight: 700; font-size: 1.02rem; color: white; line-height: 1.1; }
+    .logo-sub { font-size: .68rem; color: var(--text-muted); letter-spacing: .04em; }
     .nav-section { padding: 12px 10px 6px; }
     .nav-label { font-size: .65rem; letter-spacing: .1em; color: var(--text-muted); text-transform: uppercase; padding: 0 8px; margin-bottom: 4px; }
     .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: rgba(255,255,255,.6); cursor: pointer; font-size: .9rem; transition: all .15s; text-decoration: none; margin-bottom: 2px; }
@@ -404,6 +406,64 @@
     }
     .tg-vidnote-meta { display: flex; flex-direction: column; gap: 2px; }
     .tg-vidnote-time { font-size: .62rem; color: rgba(255,255,255,.35); }
+
+    /* ── Fluxograma (vista por grupo) ── */
+    .flow-groups { display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px; }
+    .flow-group-pill {
+      display:flex;align-items:center;gap:8px;padding:9px 16px;border-radius:12px;
+      border:1px solid var(--border);background:var(--card);cursor:pointer;
+      transition:all .18s;font-size:.85rem;color:rgba(255,255,255,.7);font-weight:600;
+    }
+    .flow-group-pill:hover { border-color:rgba(124,58,237,.45);transform:translateY(-1px); }
+    .flow-group-pill.active { border-color:var(--accent);background:rgba(124,58,237,.2);color:#fff;box-shadow:0 4px 16px rgba(124,58,237,.18); }
+    .flow-group-pill .gcount { font-size:.7rem;padding:1px 8px;border-radius:20px;background:rgba(255,255,255,.1);color:rgba(255,255,255,.6); }
+    .flow-group-pill.active .gcount { background:var(--accent);color:#fff; }
+
+    .flow-canvas {
+      position:relative; padding:10px 0 40px;
+      display:flex; flex-direction:column; align-items:center; gap:0;
+    }
+    .flow-start {
+      display:inline-flex;align-items:center;gap:9px;padding:10px 20px;border-radius:30px;
+      background:linear-gradient(135deg,#2aabee,#229ed9);color:#fff;font-weight:700;font-size:.9rem;
+      box-shadow:0 6px 20px rgba(42,171,238,.3);
+    }
+    .flow-connector { width:2px;height:30px;background:linear-gradient(var(--accent),rgba(124,58,237,.3));position:relative; }
+    .flow-connector::after { content:'';position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);
+      border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--accent); }
+
+    .flow-node {
+      width:100%; max-width:560px; background:var(--card); border:1px solid var(--border);
+      border-radius:16px; padding:0; transition:border-color .18s, box-shadow .18s, transform .1s;
+      cursor:grab; overflow:hidden; position:relative;
+    }
+    .flow-node:hover { border-color:rgba(124,58,237,.45); box-shadow:0 8px 28px rgba(0,0,0,.3); }
+    .flow-node.dragging { opacity:.45; cursor:grabbing; transform:scale(.98); }
+    .flow-node.drag-over { border-color:var(--accent); border-style:dashed; }
+    .flow-node.inactive { opacity:.55; }
+    .flow-node-bar { height:4px;width:100%;background:linear-gradient(90deg,var(--accent),#4f46e5); }
+    .flow-node-body { display:flex;align-items:center;gap:14px;padding:14px 16px; }
+    .flow-node-handle { color:var(--text-muted);font-size:1rem;cursor:grab;flex-shrink:0;opacity:.5; }
+    .flow-node:hover .flow-node-handle { opacity:1; }
+    .flow-time {
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      min-width:62px;padding:8px 6px;border-radius:12px;background:rgba(124,58,237,.12);
+      border:1px solid rgba(124,58,237,.25);flex-shrink:0;
+    }
+    .flow-time .ft-h { font-size:1.05rem;font-weight:800;color:#c4b5fd;line-height:1; }
+    .flow-time .ft-d { font-size:.6rem;color:var(--text-muted);margin-top:3px;text-transform:uppercase;letter-spacing:.04em; }
+    .flow-node-info { flex:1;min-width:0; }
+    .flow-node-name { font-weight:600;font-size:.95rem;color:#fff;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .flow-node-meta { display:flex;flex-wrap:wrap;gap:5px;align-items:center; }
+    .flow-node-actions { display:flex;gap:6px;flex-shrink:0; }
+    .flow-empty { text-align:center;padding:50px 20px;color:var(--text-muted); }
+    .flow-empty i { font-size:2.6rem;opacity:.22;display:block;margin-bottom:14px; }
+    .flow-add-btn {
+      display:inline-flex;align-items:center;gap:8px;margin-top:10px;padding:10px 18px;border-radius:12px;
+      border:1.5px dashed rgba(124,58,237,.4);background:transparent;color:#c4b5fd;cursor:pointer;
+      font-size:.85rem;font-weight:600;transition:all .18s;
+    }
+    .flow-add-btn:hover { background:rgba(124,58,237,.1);border-color:var(--accent); }
   </style>
 </head>
 <body>
@@ -427,12 +487,18 @@
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-logo">
     <div class="logo-icon"><i class="fab fa-telegram"></i></div>
-    <span class="logo-text">Bot Manager</span>
+    <div>
+      <div class="logo-text">Telegram</div>
+      <div class="logo-sub">Bot Manager</div>
+    </div>
   </div>
   <div class="nav-section">
     <div class="nav-label">Menu</div>
     <a class="nav-item active" onclick="showPage('messages',this)">
       <i class="fas fa-calendar-alt"></i> Mensagens
+    </a>
+    <a class="nav-item" onclick="showPage('flow',this)">
+      <i class="fas fa-diagram-project"></i> Fluxo
     </a>
     <a class="nav-item" onclick="showPage('emojis',this)">
       <i class="fas fa-fire"></i> Emojis
@@ -482,6 +548,25 @@
       </button>
     </div>
     <div id="msg-list"></div>
+  </div>
+
+  <!-- ── FLUXO ── -->
+  <div id="page-flow" style="display:none;">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title"><i class="fas fa-diagram-project me-2" style="color:var(--accent2);"></i>Fluxo de Mensagens</h1>
+        <p class="page-subtitle">Organize a ordem das mensagens de cada grupo — arraste para reordenar</p>
+      </div>
+      <button class="btn btn-accent px-4" onclick="openAdd()">
+        <i class="fas fa-plus me-2"></i>Nova Mensagem
+      </button>
+    </div>
+
+    <!-- Seletor de grupo -->
+    <div class="flow-groups" id="flow-groups"></div>
+
+    <!-- Canvas do fluxograma -->
+    <div id="flow-canvas-wrap"></div>
   </div>
 
   <!-- ── BOT ── -->
@@ -1216,6 +1301,8 @@ let sendMsgId = null;
 let schedIdx = 0;
 let _pares = [];            // lista de ativos disponíveis
 let _selectedSymbol = null; // símbolo atualmente selecionado no modal
+let _flowOrder = {};        // {group_key: [message_id, ...]}
+let _flowGroup = null;      // grupo selecionado na vista de fluxo
 
 const DAYS = [
   { k: "mon", l: "Seg" }, { k: "tue", l: "Ter" }, { k: "wed", l: "Qua" },
@@ -1321,7 +1408,7 @@ async function init() {
     document.getElementById("nav-admin").style.display = "";
   }
 
-  await Promise.all([fetchConfig(), fetchMessages(), fetchPares()]);
+  await Promise.all([fetchConfig(), fetchMessages(), fetchPares(), fetchFlowOrder()]);
   renderMsgList();
   checkStatus();
   setInterval(checkStatus, 30000);
@@ -1351,7 +1438,7 @@ async function fetchMessages() {
 }
 
 // ───────────────────────── Navigation ────────────────────
-const PAGES = ["messages", "emojis", "bot", "config", "admin"];
+const PAGES = ["messages", "flow", "emojis", "bot", "config", "admin"];
 
 function showPage(page, el) {
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
@@ -1364,6 +1451,7 @@ function showPage(page, el) {
   if (page === "bot")    renderBots();
   if (page === "emojis") fetchEmojiMap().then(renderEmojiMap);
   if (page === "admin")  loadAdminPage();
+  if (page === "flow")   renderFlow();
   closeSidebar();
 }
 
@@ -1450,6 +1538,179 @@ function renderMsgCard(msg) {
       </div>
     </div>
   </div>`;
+}
+
+// ═══════════════════════ FLUXO (por grupo) ═══════════════
+
+async function fetchFlowOrder() {
+  try {
+    const r = await fetch("/api/flow-order");
+    _flowOrder = (await r.json()) || {};
+  } catch { _flowOrder = {}; }
+}
+
+async function persistFlowOrder() {
+  try {
+    await fetch("/api/flow-order", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(_flowOrder),
+    });
+  } catch {}
+}
+
+// Retorna [{msg, sched}] — 1 nó por mensagem com agendamento no grupo, ordenado
+function _flowItems(groupKey) {
+  const byMsg = {};
+  (store.messages || []).forEach(msg => {
+    (msg.schedules || []).forEach(s => {
+      if (s.group !== groupKey) return;
+      if (!byMsg[msg.id] || (s.time || "") < (byMsg[msg.id].sched.time || "")) {
+        byMsg[msg.id] = { msg, sched: s };
+      }
+    });
+  });
+  const items = Object.values(byMsg);
+  const order = _flowOrder[groupKey] || [];
+  items.sort((a, b) => {
+    const ia = order.indexOf(a.msg.id), ib = order.indexOf(b.msg.id);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return (a.sched.time || "").localeCompare(b.sched.time || "");
+  });
+  return items;
+}
+
+function renderFlow() {
+  const groups = cfg.groups || {};
+  const keys = Object.keys(groups);
+  if (!_flowGroup || !groups[_flowGroup]) _flowGroup = keys[0] || null;
+
+  const pillsEl = document.getElementById("flow-groups");
+  if (keys.length === 0) {
+    pillsEl.innerHTML = `<div style="color:var(--text-muted);font-size:.85rem;">Nenhum grupo configurado. Vá em <b>Configurações</b> para criar.</div>`;
+    document.getElementById("flow-canvas-wrap").innerHTML = "";
+    return;
+  }
+  pillsEl.innerHTML = keys.map(k => {
+    const count  = _flowItems(k).length;
+    const active = k === _flowGroup;
+    return `<div class="flow-group-pill ${active ? "active" : ""}" onclick="selectFlowGroup('${esc(k)}')">
+      <i class="fas fa-users-rectangle"></i> ${esc(groups[k].name || k)}
+      <span class="gcount">${count}</span>
+    </div>`;
+  }).join("");
+
+  renderFlowCanvas();
+}
+
+function selectFlowGroup(k) { _flowGroup = k; renderFlow(); }
+
+function renderFlowCanvas() {
+  const wrap = document.getElementById("flow-canvas-wrap");
+  if (!_flowGroup) { wrap.innerHTML = ""; return; }
+  const items = _flowItems(_flowGroup);
+  const gname = cfg.groups?.[_flowGroup]?.name || _flowGroup;
+
+  if (items.length === 0) {
+    wrap.innerHTML = `<div class="flow-empty">
+      <i class="fas fa-diagram-project"></i>
+      <div>Nenhuma mensagem agendada para <b>${esc(gname)}</b>.</div>
+      <button class="flow-add-btn" onclick="openAdd()"><i class="fas fa-plus"></i> Criar mensagem</button>
+    </div>`;
+    return;
+  }
+
+  const nodes = items.map((it, i) =>
+    `${i > 0 ? '<div class="flow-connector"></div>' : ''}${_flowNodeHtml(it, i)}`
+  ).join("");
+
+  wrap.innerHTML = `
+    <div class="flow-canvas" id="flow-canvas">
+      <div class="flow-start"><i class="fab fa-telegram"></i> ${esc(gname)}</div>
+      <div class="flow-connector"></div>
+      ${nodes}
+      <div style="margin-top:14px;"><button class="flow-add-btn" onclick="openAdd()"><i class="fas fa-plus"></i> Adicionar mensagem</button></div>
+    </div>`;
+
+  _bindFlowDrag();
+}
+
+function _flowNodeHtml(it, idx) {
+  const { msg, sched } = it;
+  const time = (sched.time || "--:--").slice(0, 5);
+  const days = (sched.days || []).map(d => DAYS.find(x => x.k === d)?.l || d).join(" ");
+  const active = msg.active !== false && sched.active !== false;
+
+  let badges = "";
+  if (msg.candle_symbol) {
+    const p = _pares.find(x => x.symbol === msg.candle_symbol);
+    const v = _assetVisual(msg.candle_symbol, p?.nome);
+    badges += `<span class="badge-asset"><span style="color:${v.c};">${v.i}</span> ${esc(p?.nome || msg.candle_symbol)}</span>`;
+  }
+  if (msg.conditional_enabled) badges += `<span class="badge-candle-wait"><i class="fas fa-code-branch"></i> condicional</span>`;
+  if (msg.candle_result === "win")  badges += `<span class="badge-win"><i class="fas fa-check-circle"></i> WIN</span>`;
+  else if (msg.candle_result === "loss") badges += `<span class="badge-loss"><i class="fas fa-times-circle"></i> LOSS</span>`;
+  if (days) badges += `<span class="sched-tag">${esc(days)}</span>`;
+
+  return `
+    <div class="flow-node ${active ? "" : "inactive"}" draggable="true" data-mid="${esc(msg.id)}">
+      <div class="flow-node-bar"></div>
+      <div class="flow-node-body">
+        <i class="fas fa-grip-vertical flow-node-handle"></i>
+        <div class="flow-time"><span class="ft-h">${esc(time)}</span><span class="ft-d">${idx + 1}º</span></div>
+        <div class="flow-node-info">
+          <div class="flow-node-name">${esc(msg.name || "Sem nome")}</div>
+          <div class="flow-node-meta">${badges || '<span style="font-size:.74rem;color:var(--text-muted);">sem marcadores</span>'}</div>
+        </div>
+        <div class="flow-node-actions">
+          <button class="btn btn-outline-success btn-icon" onclick="openSend('${esc(msg.id)}')" title="Enviar agora"><i class="fas fa-paper-plane"></i></button>
+          <button class="btn btn-outline-primary btn-icon" onclick="openEdit('${esc(msg.id)}')" title="Editar"><i class="fas fa-pen"></i></button>
+        </div>
+      </div>
+    </div>`;
+}
+
+let _flowDragMid = null;
+
+function _bindFlowDrag() {
+  const canvas = document.getElementById("flow-canvas");
+  if (!canvas) return;
+  canvas.querySelectorAll(".flow-node").forEach(node => {
+    node.addEventListener("dragstart", e => {
+      _flowDragMid = node.dataset.mid;
+      node.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+    });
+    node.addEventListener("dragend", () => {
+      node.classList.remove("dragging");
+      canvas.querySelectorAll(".flow-node").forEach(n => n.classList.remove("drag-over"));
+    });
+    node.addEventListener("dragover", e => { e.preventDefault(); node.classList.add("drag-over"); });
+    node.addEventListener("dragleave", () => node.classList.remove("drag-over"));
+    node.addEventListener("drop", e => {
+      e.preventDefault();
+      node.classList.remove("drag-over");
+      const targetMid = node.dataset.mid;
+      if (_flowDragMid && targetMid && _flowDragMid !== targetMid) {
+        _reorderFlow(_flowDragMid, targetMid);
+      }
+    });
+  });
+}
+
+function _reorderFlow(dragMid, targetMid) {
+  let ids = _flowItems(_flowGroup).map(it => it.msg.id);
+  ids = ids.filter((v, i) => ids.indexOf(v) === i);
+  const from = ids.indexOf(dragMid);
+  const to   = ids.indexOf(targetMid);
+  if (from === -1 || to === -1) return;
+  ids.splice(to, 0, ids.splice(from, 1)[0]);
+  _flowOrder[_flowGroup] = ids;
+  persistFlowOrder();
+  renderFlow();
+  toast("Ordem atualizada", "success");
 }
 
 // ═══════════════════════ WIZARD (4 passos) ═══════════════
@@ -1705,11 +1966,17 @@ async function saveMessage() {
   if (r.ok) {
     await fetchMessages();
     renderMsgList();
+    _refreshFlowIfVisible();
     getMsgModal().hide();
     toast(editingId ? "Mensagem atualizada!" : "Mensagem criada!", "success");
   } else {
     toast("Erro ao salvar", "danger");
   }
+}
+
+function _refreshFlowIfVisible() {
+  const fp = document.getElementById("page-flow");
+  if (fp && fp.style.display !== "none") renderFlow();
 }
 
 async function delMsg(id) {
@@ -1718,6 +1985,7 @@ async function delMsg(id) {
   if (r.ok) {
     await fetchMessages();
     renderMsgList();
+    _refreshFlowIfVisible();
     toast("Mensagem excluída", "success");
   }
 }

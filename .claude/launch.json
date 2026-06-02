@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["preview_server.py"],
+      "port": 5000,
+      "env": { "NO_AUTH": "1" }
+    }
+  ]
+}

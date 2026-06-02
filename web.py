@@ -404,6 +404,22 @@ def create_app() -> Flask:
             _reload_callback()
         return jsonify({"success": True})
 
+    # ── Flow order (ordem do fluxograma por grupo) ──────────────────────────────
+
+    @app.route("/api/flow-order", methods=["GET"])
+    @login_required
+    def get_flow_order():
+        return jsonify(_db.load_flow_order())
+
+    @app.route("/api/flow-order", methods=["PUT"])
+    @login_required
+    def set_flow_order():
+        data = request.get_json(force=True) or {}
+        # Espera {group_key: [message_id, ...]}
+        clean = {k: list(v) for k, v in data.items() if isinstance(v, list)}
+        _db.save_flow_order(clean)
+        return jsonify({"success": True})
+
     # ── Messages ──────────────────────────────────────────────────────────────
 
     @app.route("/api/messages", methods=["GET"])
