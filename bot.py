@@ -1,9 +1,11 @@
+import asyncio
 import json
 import logging
 import os
 import re
 import subprocess
 import tempfile
+import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -313,6 +315,71 @@ async def send_scheduled_message(
         raise
 
 
+_CANDLES_API_URL = "https://web-production-cdff3.up.railway.app/candles"
+
+
+async def check_candle_results() -> None:
+    """Verifica a API de candles M1 e atualiza o resultado WIN/LOSS dos templates marcados.
+
+    Roda a cada minuto (agendado em setup_scheduler). Só atualiza mensagens que
+    possuem candle_hour configurado. Nunca sobrescreve um resultado definido manualmente
+    se o candle daquela hora não está mais na janela retornada pela API.
+    """
+    import db as _db
+
+    def _fetch() -> dict:
+        with urllib.request.urlopen(_CANDLES_API_URL, timeout=10) as resp:
+            return json.loads(resp.read())
+
+    try:
+        data = await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        logger.warning("Candle API indisponível: %s", exc)
+        return
+
+    candles = data.get("candles", [])
+    if not candles:
+        return
+
+    # Monta mapa "HH:MM" → resultado para os candles retornados
+    candle_map: dict = {}
+    for c in candles:
+        hora_full = c.get("hora", "")   # ex: "09:00:00"
+        hora_hm   = hora_full[:5]       # ex: "09:00"
+        resultado = c.get("resultado")  # "win" ou "loss"
+        if hora_hm and resultado:
+            candle_map[hora_hm] = resultado
+
+    if not candle_map:
+        return
+
+    try:
+        messages = _db.load_messages().get("messages", [])
+    except Exception as exc:
+        logger.warning("Erro ao carregar mensagens para candle check: %s", exc)
+        return
+
+    updated = 0
+    for msg in messages:
+        candle_hour = msg.get("candle_hour")
+        if not candle_hour:
+            continue
+        result = candle_map.get(candle_hour)
+        if result and result != msg.get("candle_result"):
+            try:
+                _db.update_candle_result(msg["id"], result)
+                logger.info(
+                    "Candle %s → %s  |  mensagem '%s'",
+                    candle_hour, result.upper(), msg.get("name", msg["id"]),
+                )
+                updated += 1
+            except Exception as exc:
+                logger.warning("Erro ao salvar resultado candle: %s", exc)
+
+    if updated:
+        logger.info("Candle checker: %d resultado(s) atualizado(s)", updated)
+
+
 def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None:
     scheduler.remove_all_jobs()
     timezone = config.get("timezone", "America/Sao_Paulo")
@@ -357,7 +424,16 @@ def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None
             )
             job_count += 1
 
-    logger.info("%d agendamento(s) configurado(s)", job_count)
+    # ── Job de verificação automática de candles (a cada minuto, aos :30s) ──
+    scheduler.add_job(
+        check_candle_results,
+        trigger=CronTrigger(second=30, timezone=timezone),
+        id="candle_checker",
+        replace_existing=True,
+        misfire_grace_time=30,
+    )
+
+    logger.info("%d agendamento(s) de mensagem + candle checker configurados", job_count)
 
 
 async def reload_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None:

@@ -122,6 +122,12 @@ def init_db() -> None:
         cur.execute(
             "ALTER TABLE messages ADD COLUMN IF NOT EXISTS video_note TEXT"
         )
+        cur.execute(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS candle_hour TEXT"
+        )
+        cur.execute(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS candle_result TEXT"
+        )
     logger.info("Banco de dados PostgreSQL pronto")
 
 
@@ -265,9 +271,9 @@ def load_messages() -> dict:
 
     with _conn() as c:
         cur = c.cursor()
-        cur.execute("SELECT id, name, text, image, video_note, active, parse_mode FROM messages ORDER BY name")
+        cur.execute("SELECT id, name, text, image, video_note, active, parse_mode, candle_hour, candle_result FROM messages ORDER BY name")
         msgs = []
-        for mid, name, text, image, video_note, active, parse_mode in cur.fetchall():
+        for mid, name, text, image, video_note, active, parse_mode, candle_hour, candle_result in cur.fetchall():
             cur.execute(
                 "SELECT id, group_key, time, days, buttons, active "
                 "FROM schedules WHERE message_id=%s ORDER BY time",
@@ -280,7 +286,8 @@ def load_messages() -> dict:
             ]
             msgs.append({"id": mid, "name": name, "text": text, "image": image,
                           "video_note": video_note, "active": active,
-                          "parse_mode": parse_mode or "HTML", "schedules": schedules})
+                          "parse_mode": parse_mode or "HTML", "schedules": schedules,
+                          "candle_hour": candle_hour, "candle_result": candle_result})
     return {"messages": msgs}
 
 
@@ -295,10 +302,11 @@ def save_messages(data: dict) -> None:
         cur.execute("DELETE FROM messages")
         for msg in data.get("messages", []):
             cur.execute(
-                "INSERT INTO messages(id,name,text,image,video_note,active,parse_mode) VALUES(%s,%s,%s,%s,%s,%s,%s)",
+                "INSERT INTO messages(id,name,text,image,video_note,active,parse_mode,candle_hour,candle_result) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (msg["id"], msg.get("name",""), msg.get("text",""),
                  msg.get("image"), msg.get("video_note"),
-                 msg.get("active", True), msg.get("parse_mode", "HTML"))
+                 msg.get("active", True), msg.get("parse_mode", "HTML"),
+                 msg.get("candle_hour"), msg.get("candle_result"))
             )
             for s in msg.get("schedules", []):
                 cur.execute(
@@ -318,6 +326,8 @@ def upsert_message(msg: dict) -> dict:
         if idx is None:
             data["messages"].append(msg)
         else:
+            # Preserva candle_result definido pelo checker — não sobrescreve via save do modal
+            msg.setdefault("candle_result", data["messages"][idx].get("candle_result"))
             data["messages"][idx] = msg
         save_messages(data)
         return msg
@@ -325,13 +335,17 @@ def upsert_message(msg: dict) -> dict:
     with _conn() as c:
         cur = c.cursor()
         cur.execute(
-            "INSERT INTO messages(id,name,text,image,video_note,active,parse_mode) VALUES(%s,%s,%s,%s,%s,%s,%s) "
+            "INSERT INTO messages(id,name,text,image,video_note,active,parse_mode,candle_hour) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, text=EXCLUDED.text, "
             "image=EXCLUDED.image, video_note=EXCLUDED.video_note, "
-            "active=EXCLUDED.active, parse_mode=EXCLUDED.parse_mode",
+            "active=EXCLUDED.active, parse_mode=EXCLUDED.parse_mode, "
+            "candle_hour=EXCLUDED.candle_hour",
+            # candle_result é intencionalmente excluído do UPDATE — gerenciado por update_candle_result()
             (msg["id"], msg.get("name",""), msg.get("text",""),
              msg.get("image"), msg.get("video_note"),
-             msg.get("active", True), msg.get("parse_mode", "HTML"))
+             msg.get("active", True), msg.get("parse_mode", "HTML"),
+             msg.get("candle_hour") or None)
         )
         cur.execute("DELETE FROM schedules WHERE message_id=%s", (msg["id"],))
         for s in msg.get("schedules", []):
@@ -375,6 +389,27 @@ def delete_message(message_id: str) -> None:
         return
     with _conn() as c:
         c.cursor().execute("DELETE FROM messages WHERE id=%s", (message_id,))
+
+
+def update_candle_result(message_id: str, result) -> None:
+    """Atualiza apenas o resultado WIN/LOSS do candle de uma mensagem.
+
+    Chamado pelo checker automático (bot.py) e pelo endpoint PATCH do dashboard.
+    ``result`` deve ser 'win', 'loss' ou None para limpar.
+    """
+    if not use_postgres():
+        data = load_messages()
+        for msg in data["messages"]:
+            if msg["id"] == message_id:
+                msg["candle_result"] = result
+                break
+        save_messages(data)
+        return
+    with _conn() as c:
+        c.cursor().execute(
+            "UPDATE messages SET candle_result=%s WHERE id=%s",
+            (result, message_id),
+        )
 
 
 # ── Emoji Map ─────────────────────────────────────────────────────────────────

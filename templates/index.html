@@ -69,6 +69,19 @@
     .sched-tag.inactive { border-color: var(--border); color: var(--text-muted); background: rgba(255,255,255,.04); }
     .badge-img { font-size: .7rem; padding: 2px 7px; border-radius: 4px; background: rgba(255,255,255,.08); color: rgba(255,255,255,.5); }
 
+    /* ── Candle WIN / LOSS badges ── */
+    .badge-win  { display:inline-flex;align-items:center;gap:4px;font-size:.72rem;padding:3px 10px;border-radius:20px;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);color:#34d399;font-weight:700;letter-spacing:.04em; }
+    .badge-loss { display:inline-flex;align-items:center;gap:4px;font-size:.72rem;padding:3px 10px;border-radius:20px;background:rgba(239,68,68,.13);border:1px solid rgba(239,68,68,.35);color:#f87171;font-weight:700;letter-spacing:.04em; }
+    .badge-candle-wait { display:inline-flex;align-items:center;gap:4px;font-size:.72rem;padding:3px 10px;border-radius:20px;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--text-muted); }
+    .candle-actions { display:inline-flex;align-items:center;gap:4px;margin-left:4px; }
+    .btn-candle { padding:2px 8px;font-size:.7rem;border-radius:14px;border:none;cursor:pointer;font-weight:600;line-height:1.4; }
+    .btn-candle-win  { background:rgba(16,185,129,.2);color:#34d399;border:1px solid rgba(16,185,129,.35); }
+    .btn-candle-win:hover  { background:rgba(16,185,129,.35); }
+    .btn-candle-loss { background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3); }
+    .btn-candle-loss:hover { background:rgba(239,68,68,.3); }
+    .btn-candle-clear { background:rgba(255,255,255,.07);color:var(--text-muted);border:1px solid var(--border); }
+    .btn-candle-clear:hover { background:rgba(255,255,255,.13); }
+
     /* ── Status ── */
     .status-on  { color: var(--success); font-size: .75rem; }
     .status-off { color: #6b7280;        font-size: .75rem; }
@@ -783,6 +796,18 @@
               <input class="form-check-input" type="checkbox" id="f-active" checked>
               <label class="form-check-label" for="f-active">Mensagem ativa</label>
             </div>
+
+            <!-- ── Marcador de Candle ── -->
+            <div class="divider"></div>
+            <div class="section-label"><i class="fas fa-chart-candlestick me-1" style="color:#f59e0b;"></i>Marcador de Candle M1</div>
+            <div class="mb-2">
+              <label class="form-label">Horário do candle</label>
+              <input type="time" class="form-control form-control-sm" id="f-candle-hour" step="60">
+              <div style="font-size:.72rem;color:var(--text-muted);margin-top:5px;">
+                <i class="fas fa-info-circle me-1"></i>O resultado WIN/LOSS é verificado automaticamente a cada minuto na API de candles.
+              </div>
+            </div>
+            <div id="f-candle-result-display" style="margin-bottom:8px;min-height:24px;"></div>
           </div>
 
           <!-- Coluna central: preview Telegram -->
@@ -1050,14 +1075,35 @@ function renderMsgCard(msg) {
   const extra = scheds.length > 4
     ? `<span class="sched-tag">+${scheds.length - 4} mais</span>` : "";
 
+  // ── Badge candle ──
+  let candleBadge = "";
+  if (msg.candle_hour) {
+    if (msg.candle_result === "win") {
+      candleBadge = `<span class="badge-win"><i class="fas fa-check-circle"></i> WIN</span>`;
+    } else if (msg.candle_result === "loss") {
+      candleBadge = `<span class="badge-loss"><i class="fas fa-times-circle"></i> LOSS</span>`;
+    } else {
+      candleBadge = `<span class="badge-candle-wait"><i class="fas fa-chart-bar"></i> ${esc(msg.candle_hour)}</span>`;
+    }
+  }
+
+  // ── Botões de resultado rápido (visíveis quando candle_hour está definido) ──
+  const candleActions = msg.candle_hour ? `
+    <div class="candle-actions" title="Definir resultado do candle ${esc(msg.candle_hour)}">
+      <button class="btn-candle btn-candle-win"  onclick="setCandleResult('${esc(msg.id)}','win')" title="WIN">✓ WIN</button>
+      <button class="btn-candle btn-candle-loss" onclick="setCandleResult('${esc(msg.id)}','loss')" title="LOSS">✗ LOSS</button>
+      ${msg.candle_result ? `<button class="btn-candle btn-candle-clear" onclick="setCandleResult('${esc(msg.id)}',null)" title="Limpar resultado"><i class="fas fa-eraser"></i></button>` : ""}
+    </div>` : "";
+
   return `
   <div class="card-box" id="card-${esc(msg.id)}">
     <div class="msg-header">
       <div style="min-width:0;flex:1;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;flex-wrap:wrap;">
           <span class="msg-title">${esc(msg.name || "Sem nome")}</span>
           <span class="${active ? "status-on" : "status-off"}">● ${active ? "Ativo" : "Inativo"}</span>
           ${msg.image ? `<span class="badge-img"><i class="fas fa-image me-1"></i>Imagem</span>` : ""}
+          ${candleBadge}${candleActions}
         </div>
         <div class="msg-preview">${esc((msg.text || "").replace(/<[^>]+>/g, "")).substring(0, 140)}</div>
         <div class="sched-tags">${tags}${extra}${scheds.length === 0 ? `<span style="font-size:.78rem;color:var(--text-muted);"><i class="fas fa-exclamation-circle me-1"></i>Sem agendamentos</span>` : ""}</div>
@@ -1087,6 +1133,8 @@ function openAdd() {
   setMsgType("text");
   document.getElementById("f-parse-mode").value = "HTML";
   onParseModeChange();
+  document.getElementById("f-candle-hour").value = "";
+  document.getElementById("f-candle-result-display").innerHTML = "";
   document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
   document.getElementById("scheds-empty").style.display = "";
   getMsgModal().show();
@@ -1122,6 +1170,10 @@ function openEdit(id) {
   document.getElementById("f-active").checked = msg.active !== false;
   document.getElementById("f-parse-mode").value = msg.parse_mode || "HTML";
   onParseModeChange();
+
+  // ── Candle marker ──
+  document.getElementById("f-candle-hour").value = msg.candle_hour || "";
+  _renderModalCandleResult(msg.candle_result);
 
   document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
   const hasScheds = (msg.schedules || []).length > 0;
@@ -1236,13 +1288,14 @@ async function saveMessage() {
   }
 
   const payload = {
-    name:       document.getElementById("f-name").value.trim() || "Sem nome",
-    text:       isVidnote ? "" : text,
-    image:      isVidnote ? null : (document.getElementById("f-image").value.trim() || null),
-    video_note: isVidnote ? (document.getElementById("f-video-note").value || null) : null,
-    active:     document.getElementById("f-active").checked,
-    parse_mode: document.getElementById("f-parse-mode").value,
-    schedules:  collectSchedules(),
+    name:        document.getElementById("f-name").value.trim() || "Sem nome",
+    text:        isVidnote ? "" : text,
+    image:       isVidnote ? null : (document.getElementById("f-image").value.trim() || null),
+    video_note:  isVidnote ? (document.getElementById("f-video-note").value || null) : null,
+    active:      document.getElementById("f-active").checked,
+    parse_mode:  document.getElementById("f-parse-mode").value,
+    schedules:   collectSchedules(),
+    candle_hour: document.getElementById("f-candle-hour").value || null,
   };
 
   const url    = editingId ? `/api/messages/${editingId}` : "/api/messages";
@@ -1267,6 +1320,45 @@ async function delMsg(id) {
     renderMsgList();
     toast("Mensagem excluída", "success");
   }
+}
+
+// ═════════════════════════ CANDLE RESULT ═════════════════
+
+function _renderModalCandleResult(result) {
+  const el = document.getElementById("f-candle-result-display");
+  if (!el) return;
+  if (result === "win") {
+    el.innerHTML = `<span class="badge-win"><i class="fas fa-check-circle"></i> WIN</span>
+      <button type="button" class="btn-candle btn-candle-clear ms-2" onclick="_clearModalCandleResultNow()">
+        <i class="fas fa-eraser"></i> Limpar
+      </button>`;
+  } else if (result === "loss") {
+    el.innerHTML = `<span class="badge-loss"><i class="fas fa-times-circle"></i> LOSS</span>
+      <button type="button" class="btn-candle btn-candle-clear ms-2" onclick="_clearModalCandleResultNow()">
+        <i class="fas fa-eraser"></i> Limpar
+      </button>`;
+  } else {
+    el.innerHTML = `<span style="font-size:.78rem;color:var(--text-muted);">Aguardando verificação automática...</span>`;
+  }
+}
+
+async function setCandleResult(id, result) {
+  const r = await fetch(`/api/messages/${id}/candle-result`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ result }),
+  });
+  if (!r.ok) { toast("Erro ao definir resultado", "danger"); return; }
+  const msg = store.messages.find(m => m.id === id);
+  if (msg) msg.candle_result = result;
+  renderMsgList();
+  toast(result ? `Resultado ${result.toUpperCase()} definido` : "Resultado limpo", result === "win" ? "success" : result === "loss" ? "danger" : "info");
+}
+
+async function _clearModalCandleResultNow() {
+  if (!editingId) return;
+  await setCandleResult(editingId, null);
+  _renderModalCandleResult(null);
 }
 
 // ═════════════════════════ SEND NOW ══════════════════════

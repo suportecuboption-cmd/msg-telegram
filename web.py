@@ -454,6 +454,19 @@ def create_app() -> Flask:
         from flask import send_from_directory
         return send_from_directory(_UPLOAD_DIR.resolve(), filename)
 
+    @app.route("/api/messages/<message_id>/candle-result", methods=["PATCH"])
+    @login_required
+    def set_candle_result(message_id):
+        """Define manualmente o resultado WIN/LOSS de um template.
+        Body: {"result": "win" | "loss" | null}
+        """
+        body   = request.get_json(force=True) or {}
+        result = body.get("result")
+        if result not in ("win", "loss", None):
+            return jsonify({"error": "result deve ser 'win', 'loss' ou null"}), 400
+        _db.update_candle_result(message_id, result)
+        return jsonify({"success": True, "result": result})
+
     @app.route("/api/messages/<message_id>", methods=["DELETE"])
     @login_required
     def delete_message_route(message_id):
