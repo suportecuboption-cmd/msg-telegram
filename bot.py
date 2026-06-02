@@ -255,6 +255,7 @@ async def send_scheduled_message(
     candle_hour: Optional[str] = None,
     conditional_win: Optional[dict] = None,
     conditional_loss: Optional[dict] = None,
+    candle_symbol: Optional[str] = None,
 ) -> None:
     """Envia uma mensagem agendada.
 
@@ -370,6 +371,7 @@ async def send_scheduled_message(
                     conditional_loss=conditional_loss if isinstance(conditional_loss, dict) else {},
                     button_keys=button_keys,
                     config=config,
+                    candle_symbol=candle_symbol,
                 )
             )
 
@@ -378,8 +380,35 @@ async def send_scheduled_message(
         raise
 
 
-_CANDLES_API_URL = "https://web-production-cdff3.up.railway.app/candles"
+_CANDLES_API_BASE = "https://web-production-cdff3.up.railway.app"
+_CANDLES_API_URL = _CANDLES_API_BASE + "/candles"   # mantido p/ retrocompat
+_DEFAULT_CANDLE_SYMBOL = "BTCUSD-OTC"
 _CANDLE_CLOSE_WAIT = 70   # 60s (duração M1) + 10s buffer
+
+
+def _candles_url(symbol: Optional[str] = None) -> str:
+    """URL da API de candles. Com símbolo → consulta só aquele par."""
+    if symbol:
+        return f"{_CANDLES_API_BASE}/candles/{symbol}"
+    return _CANDLES_API_URL
+
+
+async def _fetch_candle_map(symbol: Optional[str] = None) -> dict:
+    """Retorna {'HH:MM': 'win'|'loss'} para o símbolo dado (ou padrão)."""
+    sym = symbol or _DEFAULT_CANDLE_SYMBOL
+
+    def _fetch() -> dict:
+        with urllib.request.urlopen(_candles_url(sym), timeout=10) as resp:
+            return json.loads(resp.read())
+
+    data = await asyncio.to_thread(_fetch)
+    candle_map: dict = {}
+    for c in data.get("candles", []):
+        hora_hm   = c.get("hora", "")[:5]
+        resultado = c.get("resultado")
+        if hora_hm and resultado:
+            candle_map[hora_hm] = resultado
+    return candle_map
 
 
 async def _check_and_send_conditional(
@@ -391,46 +420,37 @@ async def _check_and_send_conditional(
     conditional_loss: dict,
     button_keys: list,
     config: dict,
+    candle_symbol: Optional[str] = None,
     delay: int = _CANDLE_CLOSE_WAIT,
 ) -> None:
     """Aguarda o fechamento da vela M1 e envia a mensagem condicional WIN ou LOSS.
 
     Fluxo:
       1. Dorme ``delay`` segundos (padrão 70 = 60s vela + 10s buffer).
-      2. Chama a API de candles (com retry após 30s se o candle ainda não apareceu).
+      2. Consulta a API do ativo ``candle_symbol`` (com retry após 30s).
       3. Localiza o candle de ``candle_hour`` (formato HH:MM).
       4. Envia a mensagem condicional correspondente (WIN ou LOSS) para ``chat_id``.
     """
-    logger.info("Condicional '%s': aguardando %ds para verificar candle %s",
-                message_name, delay, candle_hour)
+    sym = candle_symbol or _DEFAULT_CANDLE_SYMBOL
+    logger.info("Condicional '%s': aguardando %ds para verificar candle %s do ativo %s",
+                message_name, delay, candle_hour, sym)
     await asyncio.sleep(delay)
-
-    def _fetch() -> dict:
-        with urllib.request.urlopen(_CANDLES_API_URL, timeout=10) as resp:
-            return json.loads(resp.read())
 
     result = None
 
     # Tenta até 3 vezes (70s, 100s, 130s desde o envio) antes de desistir
     for attempt in range(1, 4):
         try:
-            data = await asyncio.to_thread(_fetch)
+            candle_map = await _fetch_candle_map(sym)
         except Exception as exc:
-            logger.warning("Condicional '%s': falha na API (tentativa %d): %s",
-                           message_name, attempt, exc)
+            logger.warning("Condicional '%s': falha na API %s (tentativa %d): %s",
+                           message_name, sym, attempt, exc)
             if attempt < 3:
                 await asyncio.sleep(30)
             continue
 
-        candle_map: dict = {}
-        for c in data.get("candles", []):
-            hora_hm  = c.get("hora", "")[:5]   # "HH:MM"
-            resultado = c.get("resultado")
-            if hora_hm and resultado:
-                candle_map[hora_hm] = resultado
-
-        logger.info("Condicional '%s': API candles disponíveis = %s (procurando %s, tent.%d)",
-                    message_name, list(candle_map.keys()), candle_hour, attempt)
+        logger.info("Condicional '%s' [%s]: candles disponíveis = %s (procurando %s, tent.%d)",
+                    message_name, sym, list(candle_map.keys()), candle_hour, attempt)
 
         result = candle_map.get(candle_hour)
         if result:
@@ -442,12 +462,12 @@ async def _check_and_send_conditional(
             await asyncio.sleep(30)
 
     if not result:
-        logger.warning("Condicional '%s': candle %s não encontrado após 3 tentativas — abortando",
-                       message_name, candle_hour)
+        logger.warning("Condicional '%s': candle %s (%s) não encontrado após 3 tentativas — abortando",
+                       message_name, candle_hour, sym)
         return
 
-    logger.info("Condicional '%s': resultado %s para candle %s — enviando para %s",
-                message_name, result.upper(), candle_hour, chat_id)
+    logger.info("Condicional '%s': resultado %s para candle %s (%s) — enviando para %s",
+                message_name, result.upper(), candle_hour, sym, chat_id)
 
     # Garante que cond_msg é sempre um dict (psycopg2 pode retornar string JSONB)
     raw_win  = conditional_win  if isinstance(conditional_win,  dict) else {}
@@ -565,45 +585,39 @@ async def check_candle_results() -> None:
     """
     import db as _db
 
-    def _fetch() -> dict:
-        with urllib.request.urlopen(_CANDLES_API_URL, timeout=10) as resp:
-            return json.loads(resp.read())
-
-    try:
-        data = await asyncio.to_thread(_fetch)
-    except Exception as exc:
-        logger.warning("Candle API indisponível: %s", exc)
-        return
-
-    candles = data.get("candles", [])
-    if not candles:
-        return
-
-    # Monta mapa "HH:MM" → resultado para os candles retornados
-    candle_map: dict = {}
-    for c in candles:
-        hora_full = c.get("hora", "")   # ex: "09:00:00"
-        hora_hm   = hora_full[:5]       # ex: "09:00"
-        resultado = c.get("resultado")  # "win" ou "loss"
-        if hora_hm and resultado:
-            candle_map[hora_hm] = resultado
-
-    if not candle_map:
-        return
-
     try:
         messages = _db.load_messages().get("messages", [])
     except Exception as exc:
         logger.warning("Erro ao carregar mensagens para candle check: %s", exc)
         return
 
-    updated = 0
+    # Apenas mensagens que têm horários (agendamento ou candle_hour legado)
+    relevant = []
     for msg in messages:
-        # Horários a verificar = horários dos agendamentos (+ candle_hour manual legado)
         hours = {s.get("time", "")[:5] for s in msg.get("schedules", []) if s.get("time")}
         if msg.get("candle_hour"):
             hours.add(msg["candle_hour"][:5])
-        if not hours:
+        if hours:
+            relevant.append((msg, hours))
+
+    if not relevant:
+        return
+
+    # Busca candles por símbolo (uma requisição por ativo distinto)
+    symbols = {(m.get("candle_symbol") or _DEFAULT_CANDLE_SYMBOL) for m, _ in relevant}
+    symbol_maps: dict = {}
+    for sym in symbols:
+        try:
+            symbol_maps[sym] = await _fetch_candle_map(sym)
+        except Exception as exc:
+            logger.warning("Candle API indisponível para %s: %s", sym, exc)
+            symbol_maps[sym] = {}
+
+    updated = 0
+    for msg, hours in relevant:
+        sym = msg.get("candle_symbol") or _DEFAULT_CANDLE_SYMBOL
+        candle_map = symbol_maps.get(sym, {})
+        if not candle_map:
             continue
 
         # Usa o resultado do candle mais recente disponível na API entre os horários
@@ -618,8 +632,8 @@ async def check_candle_results() -> None:
             try:
                 _db.update_candle_result(msg["id"], latest_result)
                 logger.info(
-                    "Candle %s → %s  |  mensagem '%s'",
-                    latest_hour, latest_result.upper(), msg.get("name", msg["id"]),
+                    "Candle %s [%s] → %s  |  mensagem '%s'",
+                    latest_hour, sym, latest_result.upper(), msg.get("name", msg["id"]),
                 )
                 updated += 1
             except Exception as exc:
@@ -743,7 +757,8 @@ def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None
                       bool(message.get("conditional_enabled", False)),
                       candle_hour,
                       message.get("conditional_win") or {},
-                      message.get("conditional_loss") or {}],
+                      message.get("conditional_loss") or {},
+                      message.get("candle_symbol")],
                 id=job_id,
                 replace_existing=True,
                 misfire_grace_time=300,

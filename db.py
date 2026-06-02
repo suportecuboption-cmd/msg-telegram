@@ -137,6 +137,9 @@ def init_db() -> None:
         cur.execute(
             "ALTER TABLE messages ADD COLUMN IF NOT EXISTS conditional_loss JSONB"
         )
+        cur.execute(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS candle_symbol TEXT"
+        )
     logger.info("Banco de dados PostgreSQL pronto")
 
 
@@ -299,12 +302,14 @@ def load_messages() -> dict:
         cur = c.cursor()
         cur.execute(
             "SELECT id, name, text, image, video_note, active, parse_mode, "
-            "candle_hour, candle_result, conditional_enabled, conditional_win, conditional_loss "
+            "candle_hour, candle_result, conditional_enabled, conditional_win, conditional_loss, "
+            "candle_symbol "
             "FROM messages ORDER BY name"
         )
         msgs = []
         for (mid, name, text, image, video_note, active, parse_mode,
-             candle_hour, candle_result, cond_en, cond_win, cond_loss) in cur.fetchall():
+             candle_hour, candle_result, cond_en, cond_win, cond_loss,
+             candle_symbol) in cur.fetchall():
             cur.execute(
                 "SELECT id, group_key, time, days, buttons, active "
                 "FROM schedules WHERE message_id=%s ORDER BY time",
@@ -323,6 +328,7 @@ def load_messages() -> dict:
                 "conditional_enabled": bool(cond_en),
                 "conditional_win":  _parse_jsonb(cond_win),
                 "conditional_loss": _parse_jsonb(cond_loss),
+                "candle_symbol": candle_symbol,
             })
     return {"messages": msgs}
 
@@ -339,15 +345,17 @@ def save_messages(data: dict) -> None:
         for msg in data.get("messages", []):
             cur.execute(
                 "INSERT INTO messages(id,name,text,image,video_note,active,parse_mode,"
-                "candle_hour,candle_result,conditional_enabled,conditional_win,conditional_loss) "
-                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "candle_hour,candle_result,conditional_enabled,conditional_win,conditional_loss,"
+                "candle_symbol) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (msg["id"], msg.get("name",""), msg.get("text",""),
                  msg.get("image"), msg.get("video_note"),
                  msg.get("active", True), msg.get("parse_mode", "HTML"),
                  msg.get("candle_hour"), msg.get("candle_result"),
                  bool(msg.get("conditional_enabled", False)),
                  json.dumps(msg.get("conditional_win") or {}),
-                 json.dumps(msg.get("conditional_loss") or {}))
+                 json.dumps(msg.get("conditional_loss") or {}),
+                 msg.get("candle_symbol"))
             )
             for s in msg.get("schedules", []):
                 cur.execute(
@@ -377,15 +385,16 @@ def upsert_message(msg: dict) -> dict:
         cur = c.cursor()
         cur.execute(
             "INSERT INTO messages(id,name,text,image,video_note,active,parse_mode,"
-            "candle_hour,conditional_enabled,conditional_win,conditional_loss) "
-            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "candle_hour,conditional_enabled,conditional_win,conditional_loss,candle_symbol) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, text=EXCLUDED.text, "
             "image=EXCLUDED.image, video_note=EXCLUDED.video_note, "
             "active=EXCLUDED.active, parse_mode=EXCLUDED.parse_mode, "
             "candle_hour=EXCLUDED.candle_hour, "
             "conditional_enabled=EXCLUDED.conditional_enabled, "
             "conditional_win=EXCLUDED.conditional_win, "
-            "conditional_loss=EXCLUDED.conditional_loss",
+            "conditional_loss=EXCLUDED.conditional_loss, "
+            "candle_symbol=EXCLUDED.candle_symbol",
             # candle_result excluído do UPDATE — gerenciado por update_candle_result()
             (msg["id"], msg.get("name",""), msg.get("text",""),
              msg.get("image"), msg.get("video_note"),
@@ -393,7 +402,8 @@ def upsert_message(msg: dict) -> dict:
              msg.get("candle_hour") or None,
              bool(msg.get("conditional_enabled", False)),
              json.dumps(msg.get("conditional_win") or {}),
-             json.dumps(msg.get("conditional_loss") or {}))
+             json.dumps(msg.get("conditional_loss") or {}),
+             msg.get("candle_symbol") or None)
         )
         cur.execute("DELETE FROM schedules WHERE message_id=%s", (msg["id"],))
         for s in msg.get("schedules", []):

@@ -82,6 +82,24 @@
     .btn-candle-clear { background:rgba(255,255,255,.07);color:var(--text-muted);border:1px solid var(--border); }
     .btn-candle-clear:hover { background:rgba(255,255,255,.13); }
 
+    /* ── Seletor de ativos ── */
+    .asset-selected-bar { display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;border:1px solid rgba(124,58,237,.4);background:rgba(124,58,237,.1);cursor:pointer;transition:all .15s; }
+    .asset-selected-bar:hover { border-color:var(--accent);background:rgba(124,58,237,.16); }
+    .asset-selected-bar.empty { border-color:var(--border);background:rgba(255,255,255,.03); }
+    .asset-search { margin-bottom:8px; }
+    .asset-grid { display:grid;grid-template-columns:repeat(2,1fr);gap:6px;max-height:230px;overflow-y:auto;padding:2px;margin-top:4px; }
+    .asset-grid::-webkit-scrollbar { width:6px; }
+    .asset-grid::-webkit-scrollbar-thumb { background:rgba(255,255,255,.12);border-radius:3px; }
+    .asset-chip { display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.03);cursor:pointer;transition:all .15s; }
+    .asset-chip:hover { border-color:rgba(124,58,237,.4);background:rgba(124,58,237,.08);transform:translateY(-1px); }
+    .asset-chip.selected { border-color:var(--accent);background:rgba(124,58,237,.2);box-shadow:0 0 0 2px rgba(124,58,237,.15); }
+    .asset-icon { width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;font-weight:800; }
+    .asset-info { min-width:0;display:flex;flex-direction:column;line-height:1.15; }
+    .asset-name { font-size:.82rem;font-weight:600;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .asset-symbol { font-size:.66rem;color:var(--text-muted);white-space:nowrap; }
+    .asset-check { margin-left:auto;color:var(--accent2);font-size:.85rem;flex-shrink:0; }
+    .badge-asset { display:inline-flex;align-items:center;gap:5px;font-size:.7rem;padding:3px 9px;border-radius:20px;background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.35);color:#c4b5fd;font-weight:600; }
+
     /* ── Condicional section ── */
     .cond-box { border-radius:12px;padding:16px;border:1px solid; }
     .cond-box-win  { border-color:rgba(16,185,129,.3); background:rgba(16,185,129,.04); }
@@ -811,6 +829,28 @@
             <div class="section-label"><i class="fas fa-chart-bar me-1" style="color:#f59e0b;"></i>Marcador de Candle M1</div>
             <!-- candle_hour é derivado automaticamente do horário do agendamento -->
             <input type="hidden" id="f-candle-hour">
+            <input type="hidden" id="f-candle-symbol">
+
+            <!-- Seletor de ativo -->
+            <div class="mb-2">
+              <label class="form-label">Ativo a verificar</label>
+              <!-- Barra mostrando o ativo selecionado (clique para abrir o seletor) -->
+              <div class="asset-selected-bar empty" id="asset-selected-bar" onclick="_toggleAssetGrid()">
+                <div class="asset-icon" id="asset-sel-icon" style="background:rgba(255,255,255,.08);">📈</div>
+                <div class="asset-info">
+                  <span class="asset-name" id="asset-sel-name">Selecionar ativo</span>
+                  <span class="asset-symbol" id="asset-sel-symbol">clique para escolher</span>
+                </div>
+                <i class="fas fa-chevron-down asset-check" id="asset-sel-caret"></i>
+              </div>
+
+              <!-- Grid de seleção (escondido por padrão) -->
+              <div id="asset-picker" style="display:none;margin-top:8px;">
+                <input type="text" class="form-control form-control-sm asset-search" id="asset-search"
+                       placeholder="🔍 Buscar ativo..." oninput="_renderAssetGrid(this.value)">
+                <div class="asset-grid" id="asset-grid"></div>
+              </div>
+            </div>
             <div id="f-candle-result-display" style="margin-bottom:8px;min-height:24px;"></div>
 
             <!-- Toggle condicional -->
@@ -1113,6 +1153,8 @@ let store = { messages: [] };
 let editingId = null;
 let sendMsgId = null;
 let schedIdx = 0;
+let _pares = [];            // lista de ativos disponíveis
+let _selectedSymbol = null; // símbolo atualmente selecionado no modal
 
 const DAYS = [
   { k: "mon", l: "Seg" }, { k: "tue", l: "Ter" }, { k: "wed", l: "Qua" },
@@ -1218,7 +1260,7 @@ async function init() {
     document.getElementById("nav-admin").style.display = "";
   }
 
-  await Promise.all([fetchConfig(), fetchMessages()]);
+  await Promise.all([fetchConfig(), fetchMessages(), fetchPares()]);
   renderMsgList();
   checkStatus();
   setInterval(checkStatus, 30000);
@@ -1298,6 +1340,15 @@ function renderMsgCard(msg) {
   const candleTimes = [...new Set(scheds.map(s => (s.time || "").slice(0,5)).filter(Boolean))];
   const showCandle  = msg.conditional_enabled || msg.candle_hour;
   const candleLabel = candleTimes.length ? candleTimes.join(", ") : (msg.candle_hour || "");
+
+  // ── Badge do ativo selecionado ──
+  let assetBadge = "";
+  if (showCandle && msg.candle_symbol) {
+    const p = _pares.find(x => x.symbol === msg.candle_symbol);
+    const v = _assetVisual(msg.candle_symbol, p?.nome);
+    assetBadge = `<span class="badge-asset"><span style="color:${v.c};">${v.i}</span> ${esc(p?.nome || msg.candle_symbol)}</span>`;
+  }
+
   let candleBadge = "";
   if (showCandle) {
     if (msg.candle_result === "win") {
@@ -1325,7 +1376,7 @@ function renderMsgCard(msg) {
           <span class="msg-title">${esc(msg.name || "Sem nome")}</span>
           <span class="${active ? "status-on" : "status-off"}">● ${active ? "Ativo" : "Inativo"}</span>
           ${msg.image ? `<span class="badge-img"><i class="fas fa-image me-1"></i>Imagem</span>` : ""}
-          ${candleBadge}${candleActions}
+          ${assetBadge}${candleBadge}${candleActions}
         </div>
         <div class="msg-preview">${esc((msg.text || "").replace(/<[^>]+>/g, "")).substring(0, 140)}</div>
         <div class="sched-tags">${tags}${extra}${scheds.length === 0 ? `<span style="font-size:.78rem;color:var(--text-muted);"><i class="fas fa-exclamation-circle me-1"></i>Sem agendamentos</span>` : ""}</div>
@@ -1358,6 +1409,7 @@ function openAdd() {
   onParseModeChange();
   document.getElementById("f-candle-hour").value = "";
   document.getElementById("f-candle-result-display").innerHTML = "";
+  _resetAssetSelector(null);
   _resetConditionalForms();
   document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
   document.getElementById("scheds-empty").style.display = "";
@@ -1395,9 +1447,10 @@ function openEdit(id) {
   document.getElementById("f-parse-mode").value = msg.parse_mode || "HTML";
   onParseModeChange();
 
-  // ── Candle marker + condicional ──
+  // ── Candle marker + ativo + condicional ──
   document.getElementById("f-candle-hour").value = msg.candle_hour || "";
   _renderModalCandleResult(msg.candle_result);
+  _resetAssetSelector(msg.candle_symbol || null);
   _populateConditionalForms(msg);
 
   document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
@@ -1535,6 +1588,7 @@ async function saveMessage() {
     parse_mode:          document.getElementById("f-parse-mode").value,
     schedules:           scheds,
     candle_hour:         candleHour,
+    candle_symbol:       _selectedSymbol || null,
     conditional_enabled: condEnabled,
     conditional_win:     condEnabled ? _collectCondForm("win")  : {},
     conditional_loss:    condEnabled ? _collectCondForm("loss") : {},
@@ -1601,6 +1655,119 @@ async function _clearModalCandleResultNow() {
   if (!editingId) return;
   await setCandleResult(editingId, null);
   _renderModalCandleResult(null);
+}
+
+// ═══════════════════ SELETOR DE ATIVOS ═══════════════════
+
+async function fetchPares() {
+  try {
+    const r = await fetch("/api/pares");
+    const data = await r.json();
+    _pares = (data.pares || []).filter(p => p.ativo !== false);
+  } catch {
+    _pares = [];
+  }
+}
+
+// Define ícone + cores para cada ativo
+function _assetVisual(symbol, nome) {
+  const META = {
+    "BTCUSD-OTC": { i: '<i class="fab fa-bitcoin"></i>',  c: "#f7931a", bg: "rgba(247,147,26,.18)" },
+    "ETHUSD-OTC": { i: '<i class="fab fa-ethereum"></i>', c: "#7c9eff", bg: "rgba(98,126,234,.18)" },
+    "APPLE-OTC":  { i: '<i class="fab fa-apple"></i>',    c: "#f5f5f7", bg: "rgba(255,255,255,.12)" },
+    "AMAZON-OTC": { i: '<i class="fab fa-amazon"></i>',   c: "#ff9900", bg: "rgba(255,153,0,.18)" },
+    "MSFT-OTC":   { i: '<i class="fab fa-microsoft"></i>',c: "#46b5ff", bg: "rgba(0,164,239,.18)" },
+    "MCDON-OTC":  { i: "🍔", c: "#fbbf24", bg: "rgba(251,191,36,.18)" },
+    "XAUUSD-OTC": { i: "🥇", c: "#fbbf24", bg: "rgba(251,191,36,.18)" },
+  };
+  if (META[symbol]) return META[symbol];
+
+  // Forex → bandeira da moeda base
+  const FLAGS = { EUR:"🇪🇺", USD:"🇺🇸", GBP:"🇬🇧", JPY:"🇯🇵", AUD:"🇦🇺", NZD:"🇳🇿", CAD:"🇨🇦", CHF:"🇨🇭" };
+  const base = (symbol || "").slice(0, 3);
+  if (FLAGS[base]) return { i: FLAGS[base], c: "#5eead4", bg: "rgba(94,234,212,.14)" };
+
+  return { i: '<i class="fas fa-chart-line"></i>', c: "#9f67ff", bg: "rgba(124,58,237,.18)" };
+}
+
+function _toggleAssetGrid() {
+  const picker = document.getElementById("asset-picker");
+  const caret  = document.getElementById("asset-sel-caret");
+  const open   = picker.style.display === "none";
+  picker.style.display = open ? "" : "none";
+  caret.className = `fas fa-chevron-${open ? "up" : "down"} asset-check`;
+  if (open) {
+    document.getElementById("asset-search").value = "";
+    _renderAssetGrid("");
+    document.getElementById("asset-search").focus();
+  }
+}
+
+function _renderAssetGrid(filter) {
+  const grid = document.getElementById("asset-grid");
+  const f = (filter || "").toLowerCase().trim();
+  const list = _pares.filter(p =>
+    !f || (p.nome || "").toLowerCase().includes(f) || (p.symbol || "").toLowerCase().includes(f)
+  );
+  if (list.length === 0) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);font-size:.8rem;padding:16px;">Nenhum ativo encontrado</div>`;
+    return;
+  }
+  grid.innerHTML = list.map(p => {
+    const v = _assetVisual(p.symbol, p.nome);
+    const sel = p.symbol === _selectedSymbol;
+    return `
+      <div class="asset-chip ${sel ? "selected" : ""}" onclick="selectAsset('${esc(p.symbol)}')">
+        <div class="asset-icon" style="background:${v.bg};color:${v.c};">${v.i}</div>
+        <div class="asset-info">
+          <span class="asset-name">${esc(p.nome || p.symbol)}</span>
+          <span class="asset-symbol">${esc(p.symbol)}</span>
+        </div>
+        ${sel ? '<i class="fas fa-check-circle asset-check"></i>' : ''}
+      </div>`;
+  }).join("");
+}
+
+function selectAsset(symbol) {
+  _selectedSymbol = symbol;
+  _updateAssetBar();
+  _renderAssetGrid(document.getElementById("asset-search").value);
+  // fecha o grid após escolher
+  document.getElementById("asset-picker").style.display = "none";
+  document.getElementById("asset-sel-caret").className = "fas fa-chevron-down asset-check";
+}
+
+function _updateAssetBar() {
+  const bar    = document.getElementById("asset-selected-bar");
+  const icon   = document.getElementById("asset-sel-icon");
+  const name   = document.getElementById("asset-sel-name");
+  const symEl  = document.getElementById("asset-sel-symbol");
+  const caret  = document.getElementById("asset-sel-caret");
+
+  if (!_selectedSymbol) {
+    bar.classList.add("empty");
+    icon.style.background = "rgba(255,255,255,.08)";
+    icon.style.color = "";
+    icon.innerHTML = "📈";
+    name.textContent = "Selecionar ativo";
+    symEl.textContent = "clique para escolher";
+    caret.className = "fas fa-chevron-down asset-check";
+    return;
+  }
+  const p = _pares.find(x => x.symbol === _selectedSymbol) || { symbol: _selectedSymbol, nome: _selectedSymbol };
+  const v = _assetVisual(p.symbol, p.nome);
+  bar.classList.remove("empty");
+  icon.style.background = v.bg;
+  icon.style.color = v.c;
+  icon.innerHTML = v.i;
+  name.textContent = p.nome || p.symbol;
+  symEl.textContent = p.symbol;
+}
+
+function _resetAssetSelector(symbol) {
+  _selectedSymbol = symbol || null;
+  document.getElementById("asset-picker").style.display = "none";
+  _updateAssetBar();
 }
 
 // ═══════════════════ CONDICIONAL — UI ════════════════════

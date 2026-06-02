@@ -29,6 +29,26 @@ _stop_bot_callback: Optional[Callable] = None
 # Quando NO_AUTH=1/true o login é desativado (útil para dev local)
 NO_AUTH = os.getenv("NO_AUTH", "").lower() in ("1", "true", "yes")
 
+# Lista de pares usada como fallback se a API de candles estiver indisponível
+_DEFAULT_PARES = [
+    {"symbol": "AMAZON-OTC", "nome": "Amazon",     "ativo": True},
+    {"symbol": "APPLE-OTC",  "nome": "Apple",      "ativo": True},
+    {"symbol": "AUDUSD-OTC", "nome": "AUD/USD",    "ativo": True},
+    {"symbol": "BTCUSD-OTC", "nome": "Bitcoin",    "ativo": True},
+    {"symbol": "ETHUSD-OTC", "nome": "Ethereum",   "ativo": True},
+    {"symbol": "EURGBP-OTC", "nome": "EUR/GBP",    "ativo": True},
+    {"symbol": "EURJPY-OTC", "nome": "EUR/JPY",    "ativo": True},
+    {"symbol": "EURUSD-OTC", "nome": "EUR/USD",    "ativo": True},
+    {"symbol": "GBPJPY-OTC", "nome": "GBP/JPY",    "ativo": True},
+    {"symbol": "GBPUSD-OTC", "nome": "GBP/USD",    "ativo": True},
+    {"symbol": "MCDON-OTC",  "nome": "McDonald's", "ativo": True},
+    {"symbol": "MSFT-OTC",   "nome": "Microsoft",  "ativo": True},
+    {"symbol": "NZDUSD-OTC", "nome": "NZD/USD",    "ativo": True},
+    {"symbol": "USDCAD-OTC", "nome": "USD/CAD",    "ativo": True},
+    {"symbol": "USDJPY-OTC", "nome": "USD/JPY",    "ativo": True},
+    {"symbol": "XAUUSD-OTC", "nome": "Ouro",       "ativo": True},
+]
+
 
 def set_context(manager, loop: asyncio.AbstractEventLoop,
                 reload_callback: Callable,
@@ -453,6 +473,23 @@ def create_app() -> Flask:
     def serve_upload(filename):
         from flask import send_from_directory
         return send_from_directory(_UPLOAD_DIR.resolve(), filename)
+
+    @app.route("/api/pares", methods=["GET"])
+    @login_required
+    def list_pares():
+        """Lista os pares de ativos disponíveis na API de candles.
+        Faz proxy para evitar CORS; usa lista padrão como fallback.
+        """
+        try:
+            url = "https://web-production-cdff3.up.railway.app/pares"
+            with urllib.request.urlopen(url, timeout=8) as resp:
+                data = json.loads(resp.read())
+            pares = data.get("pares", data if isinstance(data, list) else [])
+            if pares:
+                return jsonify({"pares": pares})
+        except Exception as exc:
+            logger.warning("Falha ao buscar pares da API: %s", exc)
+        return jsonify({"pares": _DEFAULT_PARES})
 
     @app.route("/api/messages/<message_id>/test-conditional", methods=["POST"])
     @login_required
