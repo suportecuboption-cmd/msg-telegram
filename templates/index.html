@@ -809,17 +809,12 @@
             <!-- ── Marcador de Candle ── -->
             <div class="divider"></div>
             <div class="section-label"><i class="fas fa-chart-bar me-1" style="color:#f59e0b;"></i>Marcador de Candle M1</div>
-            <div class="mb-2">
-              <label class="form-label">Horário do candle</label>
-              <input type="time" class="form-control form-control-sm" id="f-candle-hour" step="60" oninput="_onCandleHourChange()">
-              <div style="font-size:.72rem;color:var(--text-muted);margin-top:5px;">
-                <i class="fas fa-info-circle me-1"></i>O resultado WIN/LOSS é verificado automaticamente a cada minuto.
-              </div>
-            </div>
+            <!-- candle_hour é derivado automaticamente do horário do agendamento -->
+            <input type="hidden" id="f-candle-hour">
             <div id="f-candle-result-display" style="margin-bottom:8px;min-height:24px;"></div>
 
-            <!-- Toggle condicional (só aparece quando candle_hour está preenchido) -->
-            <div id="conditional-toggle-wrap" style="display:none;">
+            <!-- Toggle condicional -->
+            <div id="conditional-toggle-wrap">
               <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" id="f-conditional-enabled" onchange="_onConditionalToggle()">
                 <label class="form-check-label" for="f-conditional-enabled" style="font-size:.85rem;font-weight:600;">
@@ -827,7 +822,11 @@
                 </label>
               </div>
               <div style="font-size:.72rem;color:var(--text-muted);margin-top:4px;">
-                <i class="fas fa-clock me-1"></i>O bot aguarda o fechamento da vela (60s + 10s buffer) e envia a mensagem abaixo automaticamente.
+                <i class="fas fa-clock me-1"></i>O candle verificado é o do <b>horário de cada agendamento</b>.
+                O bot aguarda o fechamento da vela (60s + 10s buffer) e envia a mensagem WIN/LOSS automaticamente.
+              </div>
+              <div id="conditional-no-sched-warn" style="display:none;font-size:.72rem;color:#fbbf24;margin-top:6px;">
+                <i class="fas fa-exclamation-triangle me-1"></i>Adicione pelo menos um agendamento para a verificação funcionar.
               </div>
             </div>
           </div>
@@ -1295,21 +1294,24 @@ function renderMsgCard(msg) {
   const extra = scheds.length > 4
     ? `<span class="sched-tag">+${scheds.length - 4} mais</span>` : "";
 
-  // ── Badge candle ──
+  // ── Badge candle (mostrado quando há verificação condicional ou candle manual) ──
+  const candleTimes = [...new Set(scheds.map(s => (s.time || "").slice(0,5)).filter(Boolean))];
+  const showCandle  = msg.conditional_enabled || msg.candle_hour;
+  const candleLabel = candleTimes.length ? candleTimes.join(", ") : (msg.candle_hour || "");
   let candleBadge = "";
-  if (msg.candle_hour) {
+  if (showCandle) {
     if (msg.candle_result === "win") {
       candleBadge = `<span class="badge-win"><i class="fas fa-check-circle"></i> WIN</span>`;
     } else if (msg.candle_result === "loss") {
       candleBadge = `<span class="badge-loss"><i class="fas fa-times-circle"></i> LOSS</span>`;
     } else {
-      candleBadge = `<span class="badge-candle-wait"><i class="fas fa-chart-bar"></i> ${esc(msg.candle_hour)}</span>`;
+      candleBadge = `<span class="badge-candle-wait"><i class="fas fa-chart-bar"></i> ${esc(candleLabel || "candle")}</span>`;
     }
   }
 
-  // ── Botões de resultado rápido (visíveis quando candle_hour está definido) ──
-  const candleActions = msg.candle_hour ? `
-    <div class="candle-actions" title="Definir resultado do candle ${esc(msg.candle_hour)}">
+  // ── Botões de resultado rápido ──
+  const candleActions = showCandle ? `
+    <div class="candle-actions" title="Definir resultado manualmente">
       <button class="btn-candle btn-candle-win"  onclick="setCandleResult('${esc(msg.id)}','win')" title="WIN">✓ WIN</button>
       <button class="btn-candle btn-candle-loss" onclick="setCandleResult('${esc(msg.id)}','loss')" title="LOSS">✗ LOSS</button>
       ${msg.candle_result ? `<button class="btn-candle btn-candle-clear" onclick="setCandleResult('${esc(msg.id)}',null)" title="Limpar resultado"><i class="fas fa-eraser"></i></button>` : ""}
@@ -1396,13 +1398,13 @@ function openEdit(id) {
   // ── Candle marker + condicional ──
   document.getElementById("f-candle-hour").value = msg.candle_hour || "";
   _renderModalCandleResult(msg.candle_result);
-  _onCandleHourChange();
   _populateConditionalForms(msg);
 
   document.querySelectorAll("#scheds-container .sched-item").forEach(el => el.remove());
   const hasScheds = (msg.schedules || []).length > 0;
   document.getElementById("scheds-empty").style.display = hasScheds ? "none" : "";
   (msg.schedules || []).forEach(s => appendSchedItem(s));
+  _updateCondSchedWarn();
   getMsgModal().show();
 }
 
@@ -1418,6 +1420,7 @@ function addSchedItem() {
     buttons: Object.keys(cfg.button_configs || {}),
     active: true,
   });
+  _updateCondSchedWarn();
 }
 
 function appendSchedItem(sched) {
@@ -1484,6 +1487,7 @@ function toggleDay(el) {
 function checkEmpty() {
   const items = document.querySelectorAll("#scheds-container .sched-item");
   document.getElementById("scheds-empty").style.display = items.length === 0 ? "" : "none";
+  _updateCondSchedWarn();
   updatePreview();
 }
 
@@ -1512,6 +1516,16 @@ async function saveMessage() {
   }
 
   const condEnabled = document.getElementById("f-conditional-enabled").checked;
+  const scheds = collectSchedules();
+
+  if (condEnabled && scheds.length === 0) {
+    toast("Adicione pelo menos um agendamento para usar a verificação condicional", "danger");
+    return;
+  }
+
+  // O horário do candle é derivado do agendamento — usamos o primeiro como referência do badge
+  const candleHour = scheds.length ? (scheds[0].time || "").slice(0, 5) : null;
+
   const payload = {
     name:                document.getElementById("f-name").value.trim() || "Sem nome",
     text:                isVidnote ? "" : text,
@@ -1519,8 +1533,8 @@ async function saveMessage() {
     video_note:          isVidnote ? (document.getElementById("f-video-note").value || null) : null,
     active:              document.getElementById("f-active").checked,
     parse_mode:          document.getElementById("f-parse-mode").value,
-    schedules:           collectSchedules(),
-    candle_hour:         document.getElementById("f-candle-hour").value || null,
+    schedules:           scheds,
+    candle_hour:         candleHour,
     conditional_enabled: condEnabled,
     conditional_win:     condEnabled ? _collectCondForm("win")  : {},
     conditional_loss:    condEnabled ? _collectCondForm("loss") : {},
@@ -1594,19 +1608,18 @@ async function _clearModalCandleResultNow() {
 // Tracker dos tipos selecionados para cada lado
 const _condType = { win: "text", loss: "text" };
 
-function _onCandleHourChange() {
-  const h = document.getElementById("f-candle-hour").value;
-  const wrap = document.getElementById("conditional-toggle-wrap");
-  if (wrap) wrap.style.display = h ? "" : "none";
-  if (!h) {
-    document.getElementById("f-conditional-enabled").checked = false;
-    _onConditionalToggle();
-  }
-}
-
 function _onConditionalToggle() {
   const enabled = document.getElementById("f-conditional-enabled").checked;
   document.getElementById("conditional-full-section").style.display = enabled ? "" : "none";
+  _updateCondSchedWarn();
+}
+
+// Mostra aviso se condicional está ativo mas não há agendamentos
+function _updateCondSchedWarn() {
+  const enabled = document.getElementById("f-conditional-enabled").checked;
+  const nScheds = document.querySelectorAll("#scheds-container .sched-item").length;
+  const warn = document.getElementById("conditional-no-sched-warn");
+  if (warn) warn.style.display = (enabled && nScheds === 0) ? "" : "none";
 }
 
 function setCondType(side, type) {
@@ -1650,7 +1663,8 @@ function _resetCondSide(side) {
 function _resetConditionalForms() {
   document.getElementById("f-conditional-enabled").checked = false;
   document.getElementById("conditional-full-section").style.display = "none";
-  document.getElementById("conditional-toggle-wrap").style.display = "none";
+  const warn = document.getElementById("conditional-no-sched-warn");
+  if (warn) warn.style.display = "none";
   _resetCondSide("win");
   _resetCondSide("loss");
 }

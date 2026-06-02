@@ -559,9 +559,9 @@ async def _dispatch_conditional(
 async def check_candle_results() -> None:
     """Verifica a API de candles M1 e atualiza o resultado WIN/LOSS dos templates marcados.
 
-    Roda a cada minuto (agendado em setup_scheduler). Só atualiza mensagens que
-    possuem candle_hour configurado. Nunca sobrescreve um resultado definido manualmente
-    se o candle daquela hora não está mais na janela retornada pela API.
+    Roda a cada minuto (agendado em setup_scheduler). O horário do candle de cada
+    mensagem é derivado dos horários dos seus agendamentos (ou do candle_hour manual,
+    se definido — retrocompatibilidade).
     """
     import db as _db
 
@@ -599,16 +599,27 @@ async def check_candle_results() -> None:
 
     updated = 0
     for msg in messages:
-        candle_hour = msg.get("candle_hour")
-        if not candle_hour:
+        # Horários a verificar = horários dos agendamentos (+ candle_hour manual legado)
+        hours = {s.get("time", "")[:5] for s in msg.get("schedules", []) if s.get("time")}
+        if msg.get("candle_hour"):
+            hours.add(msg["candle_hour"][:5])
+        if not hours:
             continue
-        result = candle_map.get(candle_hour)
-        if result and result != msg.get("candle_result"):
+
+        # Usa o resultado do candle mais recente disponível na API entre os horários
+        latest_hour = None
+        latest_result = None
+        for h in hours:
+            r = candle_map.get(h)
+            if r and (latest_hour is None or h > latest_hour):
+                latest_hour, latest_result = h, r
+
+        if latest_result and latest_result != msg.get("candle_result"):
             try:
-                _db.update_candle_result(msg["id"], result)
+                _db.update_candle_result(msg["id"], latest_result)
                 logger.info(
                     "Candle %s → %s  |  mensagem '%s'",
-                    candle_hour, result.upper(), msg.get("name", msg["id"]),
+                    latest_hour, latest_result.upper(), msg.get("name", msg["id"]),
                 )
                 updated += 1
             except Exception as exc:
@@ -714,6 +725,9 @@ def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None
             hour, minute = map(int, schedule["time"].split(":"))
             job_id = f"{message['id']}_{schedule['id']}"
 
+            # O candle a verificar é SEMPRE o do horário do próprio agendamento.
+            candle_hour = schedule["time"][:5]   # "HH:MM"
+
             scheduler.add_job(
                 send_scheduled_message,
                 trigger=CronTrigger(
@@ -727,7 +741,7 @@ def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None
                       message.get("parse_mode", "HTML"),
                       message.get("video_note"),
                       bool(message.get("conditional_enabled", False)),
-                      message.get("candle_hour"),
+                      candle_hour,
                       message.get("conditional_win") or {},
                       message.get("conditional_loss") or {}],
                 id=job_id,
