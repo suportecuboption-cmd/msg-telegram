@@ -2386,6 +2386,19 @@ async function confirmDupFlow() {
 // ═══════════════════════ IA (DeepSeek) ═══════════════════
 
 let _aiMessages = [];   // mensagens geradas aguardando aplicação
+let _aiGroups = [];     // grupos novos propostos pela IA
+
+// cor de um grupo considerando grupos novos propostos pela IA
+function _aiColor(key) {
+  const ng = _aiGroups.find(g => g.key === key);
+  if (ng && ng.color) return ng.color;
+  return _groupColor(key);
+}
+function _aiGroupName(key) {
+  const ng = _aiGroups.find(g => g.key === key);
+  if (ng) return ng.name || key;
+  return cfg.groups?.[key]?.name || key;
+}
 
 async function loadAiPage() {
   // configura chips de exemplo (uma vez)
@@ -2448,6 +2461,7 @@ async function generateAiFlow() {
       return;
     }
     _aiMessages = d.messages || [];
+    _aiGroups = d.groups || [];
     renderAiResult();
     document.getElementById("ia-target-wrap").style.display = _aiMessages.length ? "" : "none";
   } catch (e) {
@@ -2465,25 +2479,54 @@ function renderAiResult() {
     document.getElementById("ia-apply-wrap").style.display = "none";
     return;
   }
-  res.innerHTML = _aiMessages.map((m, i) => {
-    const scheds = (m.schedules || []).map(s => {
-      const gname = cfg.groups?.[s.group]?.name || s.group || "?";
-      const col = _groupColor(s.group);
-      const days = (s.days || []).map(d => DAYS.find(x => x.k === d)?.l || d).join(" ");
-      return `<span class="sched-tag" style="border-color:${_hexA(col,.55)};color:${col};background:${_hexA(col,.12)};">${esc(gname)} · ${esc(s.time||"")} · ${esc(days)}</span>`;
+
+  // Banner de grupos novos a criar
+  let groupsBanner = "";
+  if (_aiGroups.length) {
+    groupsBanner = `<div style="margin-bottom:12px;font-size:.8rem;color:var(--text-muted);">
+      <i class="fas fa-folder-plus me-1" style="color:#34d399;"></i>Novos grupos a criar:
+      ${_aiGroups.map(g => `<span class="sched-tag" style="border-color:${_hexA(g.color,.6)};color:${g.color};background:${_hexA(g.color,.12)};">${esc(g.name)}</span>`).join(" ")}
+    </div>`;
+  }
+
+  // Agrupa as mensagens por grupo (formato de fluxo)
+  const byGroup = {};
+  _aiMessages.forEach((m, i) => {
+    const gk = (m.schedules && m.schedules[0] && m.schedules[0].group) || "—";
+    (byGroup[gk] = byGroup[gk] || []).push({ m, i });
+  });
+
+  const sections = Object.entries(byGroup).map(([gk, list]) => {
+    const col = _aiColor(gk);
+    // ordena por horário
+    list.sort((a, b) => ((a.m.schedules?.[0]?.time||"")).localeCompare(b.m.schedules?.[0]?.time||""));
+    const cards = list.map(({ m, i }, idx) => {
+      const t = m.schedules?.[0]?.time || "--:--";
+      const sym = m.candle_symbol ? `<span class="badge-asset">${esc(m.candle_symbol)}</span>` : "";
+      const cond = m.conditional_enabled ? `<span class="badge-candle-wait"><i class="fas fa-code-branch"></i> cond.</span>` : "";
+      const connector = idx > 0
+        ? `<div style="width:2px;height:14px;background:${_hexA(col,.6)};margin:0 auto;"></div>` : "";
+      return `${connector}
+        <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-left:3px solid ${col};border-radius:10px;padding:8px 10px;background:rgba(255,255,255,.02);">
+          <input class="form-check-input ia-pick" type="checkbox" data-i="${i}" checked style="margin:0;flex-shrink:0;">
+          <span style="font-weight:700;color:${col};font-size:.82rem;min-width:42px;">${esc(t)}</span>
+          <div style="min-width:0;flex:1;">
+            <div style="font-weight:600;font-size:.84rem;">${esc(m.name || "Sem nome")} ${sym}${cond}</div>
+            <div class="msg-preview" style="max-width:100%;margin:0;">${esc((m.text||"").replace(/<[^>]+>/g,"")).substring(0,90)}</div>
+          </div>
+        </div>`;
     }).join("");
-    const sym = m.candle_symbol ? `<span class="badge-asset">${esc(m.candle_symbol)}</span>` : "";
-    const cond = m.conditional_enabled ? `<span class="badge-candle-wait"><i class="fas fa-code-branch"></i> condicional</span>` : "";
     return `
-      <div class="config-row" style="margin-bottom:8px;">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
-          <input class="form-check-input ia-pick" type="checkbox" data-i="${i}" checked style="margin:0;">
-          <b>${esc(m.name || "Sem nome")}</b> ${sym}${cond}
+      <div style="margin-bottom:16px;">
+        <div style="display:inline-flex;align-items:center;gap:7px;padding:6px 14px;border-radius:20px;background:linear-gradient(135deg,${col},${_hexA(col,.7)});color:#fff;font-weight:700;font-size:.82rem;margin-bottom:6px;">
+          <i class="fab fa-telegram"></i> ${esc(_aiGroupName(gk))}
+          ${_aiGroups.some(g=>g.key===gk) ? '<span style="font-size:.6rem;background:rgba(255,255,255,.25);padding:1px 6px;border-radius:8px;">novo</span>' : ''}
         </div>
-        <div class="msg-preview" style="max-width:100%;margin:2px 0 6px;">${esc((m.text||"").replace(/<[^>]+>/g,"")).substring(0,120)}</div>
-        <div class="sched-tags">${scheds || '<span style="font-size:.74rem;color:var(--text-muted);">sem agendamento</span>'}</div>
+        <div style="display:flex;flex-direction:column;">${cards}</div>
       </div>`;
   }).join("");
+
+  res.innerHTML = groupsBanner + sections;
   document.getElementById("ia-apply-wrap").style.display = "";
   document.getElementById("ia-apply-count").textContent = _aiMessages.length;
 
@@ -2498,7 +2541,28 @@ async function applyAiFlow() {
   if (!picks.length) { toast("Selecione ao menos uma mensagem", "danger"); return; }
   const override = document.getElementById("ia-target-group").value;
 
+  // 1) Cria grupos novos propostos pela IA (a menos que o usuário force um destino)
+  let groupsCreated = 0;
+  if (!override && _aiGroups.length) {
+    const merged = { ...(cfg.groups || {}) };
+    _aiGroups.forEach(g => {
+      if (!merged[g.key]) {
+        merged[g.key] = { name: g.name || g.key, id: "", default_buttons: [], color: g.color || _GROUP_DEFAULT_COLOR };
+        groupsCreated++;
+      }
+    });
+    if (groupsCreated) {
+      const rc = await fetch("/api/config", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groups: merged }),
+      });
+      if (rc.ok) cfg.groups = merged;
+    }
+  }
+
+  // 2) Cria as mensagens
   let created = 0;
+  let firstGroup = null;
   for (const i of picks) {
     const m = _aiMessages[i];
     if (!m) continue;
@@ -2509,6 +2573,7 @@ async function applyAiFlow() {
       buttons: s.buttons || [],
       active: true,
     }));
+    if (!firstGroup && schedules[0]) firstGroup = schedules[0].group;
     const payload = {
       name: m.name || "Mensagem IA",
       text: m.text || "",
@@ -2526,11 +2591,18 @@ async function applyAiFlow() {
     });
     if (r.ok) created++;
   }
+
   await fetchMessages();
   renderMsgList();
-  toast(`✅ ${created} mensagem(ns) criada(s) pela IA`, "success");
-  _aiMessages = [];
+  toast(`✅ ${created} mensagem(ns)${groupsCreated ? ` e ${groupsCreated} grupo(s)` : ""} criada(s) pela IA`, "success");
+  _aiMessages = []; _aiGroups = [];
   renderAiResult();
+
+  // 3) Abre no fluxo
+  if (firstGroup) {
+    _flowGroup = firstGroup;
+    showPage("flow", document.querySelector('a.nav-item[onclick*="flow"]'));
+  }
 }
 
 // ═══════════════════════ WIZARD (4 passos) ═══════════════

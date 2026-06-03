@@ -577,24 +577,44 @@ def create_app() -> Flask:
         group_lines = "\n".join(f'- "{k}" = {g.get("name", k)}' for k, g in groups.items()) or "(nenhum)"
         first_group = next(iter(groups.keys()), "")
 
+        # Contexto: mensagens existentes deste cliente (para a IA copiar/replicar modelos)
+        existing = _load_messages().get("messages", [])
+        ctx_lines = []
+        for m in existing[:40]:
+            gs = ",".join(sorted({s.get("group", "") for s in (m.get("schedules") or [])}))
+            snippet = (m.get("text", "") or "").replace("\n", " ")[:160]
+            flags = []
+            if m.get("candle_symbol"): flags.append(f"ativo={m['candle_symbol']}")
+            if m.get("conditional_enabled"): flags.append("condicional")
+            ctx_lines.append(
+                f'- nome="{m.get("name","")}" grupos=[{gs}] {" ".join(flags)} texto="{snippet}"'
+            )
+        existing_block = "\n".join(ctx_lines) or "(nenhuma mensagem ainda)"
+
         system = (
-            "Você cria fluxos de mensagens agendadas para um bot de Telegram de sinais de trading.\n"
+            "Você cria e organiza fluxos de mensagens agendadas para um bot de Telegram de sinais de trading.\n"
             "Responda SOMENTE com um objeto JSON válido, sem comentários, no formato:\n"
-            '{"messages":[{"name":"texto curto","text":"conteudo da mensagem (pode usar <b> <i>)",'
+            '{"groups":[{"key":"slug_sem_espacos","name":"Nome do Grupo","color":"#7c3aed"}],'
+            '"messages":[{"name":"texto curto","text":"conteudo (pode usar <b> <i>)",'
             '"parse_mode":"HTML","active":true,"candle_symbol":"BTCUSD-OTC ou null",'
             '"conditional_enabled":false,'
             '"schedules":[{"group":"<chave_do_grupo>","time":"HH:MM",'
             '"days":["mon","tue","wed","thu","fri"],"buttons":[]}]}]}\n\n'
-            f"Grupos disponíveis (use a CHAVE no campo group):\n{group_lines}\n\n"
+            f"Grupos EXISTENTES (use a CHAVE no campo group):\n{group_lines}\n\n"
             f"Botões disponíveis (chaves): {buttons}\n"
             f"Ativos disponíveis para candle_symbol: {pares}\n\n"
+            f"Mensagens/modelos JÁ EXISTENTES deste cliente (pode copiar/replicar fielmente quando pedido):\n{existing_block}\n\n"
             "Regras:\n"
-            "- days aceita: mon,tue,wed,thu,fri,sat,sun\n"
-            "- time em 24h no formato HH:MM\n"
-            "- Crie um fluxo SEMANAL coerente conforme o pedido do usuário.\n"
-            "- Não invente chaves de grupo/botão fora das listas. "
-            f"Se o usuário não citar grupo, use \"{first_group}\".\n"
-            "- Retorne apenas o JSON."
+            "- Você PODE criar novos grupos em \"groups\" para organizar (key em minúsculas, sem espaços/acentos; "
+            "  inclua uma cor hex). Só crie grupos novos se o usuário pedir para organizar/separar.\n"
+            "- Para copiar um modelo existente, reproduza fielmente name/text/candle_symbol/condicional, "
+            "  mudando apenas o grupo/horário conforme pedido.\n"
+            "- Use chaves de grupo existentes quando se referir a grupos já criados; para grupos novos, "
+            "  use a key que você definiu em \"groups\".\n"
+            "- days aceita: mon,tue,wed,thu,fri,sat,sun ; time em 24h HH:MM.\n"
+            "- Não invente chaves de botão fora da lista.\n"
+            f"- Se o usuário não citar grupo nem pedir grupo novo, use \"{first_group}\".\n"
+            "- Crie um fluxo SEMANAL coerente. Retorne apenas o JSON."
         )
 
         payload = {
@@ -636,13 +656,28 @@ def create_app() -> Flask:
         if not isinstance(msgs, list):
             return jsonify({"error": "JSON sem lista 'messages'.", "raw": content}), 502
 
-        # Sanitiza: garante chaves de grupo válidas
-        valid = set(groups.keys())
+        # Grupos novos propostos pela IA
+        import re as _re
+        new_groups = []
+        for g in (parsed.get("groups") or []):
+            if not isinstance(g, dict):
+                continue
+            key = (g.get("key") or "").strip().lower()
+            key = _re.sub(r"[^a-z0-9_]+", "_", key).strip("_")
+            if not key or key in groups:
+                continue
+            color = g.get("color") if _re.match(r"^#[0-9a-fA-F]{6}$", str(g.get("color", ""))) else "#7c3aed"
+            ng = {"key": key, "name": g.get("name") or key, "color": color}
+            new_groups.append(ng)
+
+        valid = set(groups.keys()) | {g["key"] for g in new_groups}
+        fallback = first_group or (new_groups[0]["key"] if new_groups else "")
         for m in msgs:
             for s in (m.get("schedules") or []):
                 if s.get("group") not in valid:
-                    s["group"] = first_group
-        return jsonify({"messages": msgs})
+                    s["group"] = fallback
+
+        return jsonify({"messages": msgs, "groups": new_groups})
 
     @app.route("/api/messages/<message_id>/test-conditional", methods=["POST"])
     @login_required
