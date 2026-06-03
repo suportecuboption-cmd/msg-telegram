@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bot.py web.py main.py db.py ./
 COPY templates/ templates/
+COPY landing/ landing/
 COPY config.example.json ./
 COPY messages.json ./messages.default.json
 

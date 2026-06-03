@@ -166,7 +166,7 @@ def create_app() -> Flask:
     def require_login():
         if NO_AUTH:
             return None
-        exempt = {"/login", "/auth/login", "/auth/logout"}
+        exempt = {"/login", "/auth/login", "/auth/logout", "/lp"}
         if request.path in exempt or request.path.startswith("/static/"):
             return None
         if not session.get("user_id"):
@@ -848,5 +848,12 @@ def create_app() -> Flask:
     @app.route("/")
     def index():
         return render_template("index.html")
+
+    # ── Landing page pública (vendas) ───────────────────────────────────────────
+    @app.route("/lp")
+    def landing_page():
+        from flask import send_from_directory
+        landing_dir = Path(__file__).resolve().parent / "landing"
+        return send_from_directory(landing_dir, "index.html")
 
     return app
