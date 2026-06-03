@@ -487,7 +487,12 @@ async def _check_and_send_conditional(
                        message_name, result.upper())
         return
 
-    await _dispatch_conditional(bot, chat_id, message_name, result, cond_msg, button_keys, config)
+    try:
+        await _dispatch_conditional(bot, chat_id, message_name, result, cond_msg, button_keys, config)
+    except Exception as exc:
+        logger.error("Condicional '%s' [%s] falhou no envio agendado: %s",
+                     message_name, result.upper(), exc)
+        return
 
     # Atualiza o candle_result no banco para refletir o resultado recém-enviado
     try:
@@ -527,8 +532,15 @@ async def _dispatch_conditional(
     try:
         if sticker_c:
             logger.info("Condicional [%s] '%s': enviando sticker '%s'",
-                        result.upper(), message_name, sticker_c[:20])
-            await bot.send_sticker(chat_id=chat_id, sticker=sticker_c)
+                        result.upper(), message_name, sticker_c[:24])
+            try:
+                await bot.send_sticker(chat_id=chat_id, sticker=sticker_c)
+            except Exception as sx:
+                raise RuntimeError(
+                    f"Falha ao enviar sticker (file_id inválido para este bot?). "
+                    f"Envie o sticker ao bot no chat privado para obter o file_id correto. "
+                    f"Detalhe: {sx}"
+                )
             if text_c:
                 await bot.send_message(chat_id=chat_id, text=text_c,
                                        parse_mode=pm, reply_markup=keyboard)
@@ -574,6 +586,7 @@ async def _dispatch_conditional(
     except Exception as exc:
         logger.error("❌ Erro ao enviar condicional [%s] '%s' para %s: %s",
                      result.upper(), message_name, chat_id, exc)
+        raise   # propaga p/ o chamador (ex.: botão Testar mostra o erro real)
 
 
 async def check_candle_results() -> None:
