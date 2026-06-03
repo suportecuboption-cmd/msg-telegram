@@ -1597,9 +1597,14 @@ function renderMsgCard(msg) {
   const tags = scheds.slice(0, 4).map(s => {
     const gname = cfg.groups?.[s.group]?.name || s.group || "?";
     const days  = (s.days || []).map(d => DAYS.find(x => x.k === d)?.l || d).join(" ");
+    const col   = _groupColor(s.group);
     const cls   = s.active !== false ? "sched-tag" : "sched-tag inactive";
-    return `<span class="${cls}"><i class="fas fa-clock" style="font-size:.65rem;opacity:.7;"></i> ${gname} · ${s.time} · ${days}</span>`;
+    const cstyle = s.active !== false ? `border-color:${_hexA(col,.55)};color:${col};background:${_hexA(col,.12)};` : "";
+    return `<span class="${cls}" style="${cstyle}"><i class="fas fa-clock" style="font-size:.65rem;opacity:.7;"></i> ${gname} · ${s.time} · ${days}</span>`;
   }).join("");
+
+  // cor do card = grupo do primeiro agendamento
+  const cardColor = scheds.length ? _groupColor(scheds[0].group) : null;
 
   const extra = scheds.length > 4
     ? `<span class="sched-tag">+${scheds.length - 4} mais</span>` : "";
@@ -1637,7 +1642,7 @@ function renderMsgCard(msg) {
     </div>` : "";
 
   return `
-  <div class="card-box" id="card-${esc(msg.id)}">
+  <div class="card-box" id="card-${esc(msg.id)}" style="${cardColor ? `border-left:4px solid ${cardColor};` : ""}">
     <div class="msg-header">
       <div style="min-width:0;flex:1;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;flex-wrap:wrap;">
