@@ -1427,6 +1427,22 @@
   </div>
 </div>
 
+<!-- ── MODAL VER MENSAGEM (preview IA) ── -->
+<div class="modal fade" id="aiViewModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-eye me-2" style="color:var(--accent2);"></i>Visualizar mensagem</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4" id="ai-view-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── MODAL TESTAR CONDICIONAL ── -->
 <div class="modal fade" id="testCondModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
@@ -2507,13 +2523,14 @@ function renderAiResult() {
       const connector = idx > 0
         ? `<div style="width:2px;height:14px;background:${_hexA(col,.6)};margin:0 auto;"></div>` : "";
       return `${connector}
-        <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-left:3px solid ${col};border-radius:10px;padding:8px 10px;background:rgba(255,255,255,.02);">
-          <input class="form-check-input ia-pick" type="checkbox" data-i="${i}" checked style="margin:0;flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-left:3px solid ${col};border-radius:10px;padding:8px 10px;background:rgba(255,255,255,.02);cursor:pointer;" ondblclick="viewAiMessage(${i})" title="Duplo-clique para visualizar">
+          <input class="form-check-input ia-pick" type="checkbox" data-i="${i}" checked style="margin:0;flex-shrink:0;" onclick="event.stopPropagation()">
           <span style="font-weight:700;color:${col};font-size:.82rem;min-width:42px;">${esc(t)}</span>
           <div style="min-width:0;flex:1;">
             <div style="font-weight:600;font-size:.84rem;">${esc(m.name || "Sem nome")} ${sym}${cond}</div>
             <div class="msg-preview" style="max-width:100%;margin:0;">${esc((m.text||"").replace(/<[^>]+>/g,"")).substring(0,90)}</div>
           </div>
+          <i class="fas fa-up-right-from-square" style="color:var(--text-muted);font-size:.72rem;flex-shrink:0;"></i>
         </div>`;
     }).join("");
     return `
@@ -2534,6 +2551,74 @@ function renderAiResult() {
     const n = document.querySelectorAll(".ia-pick:checked").length;
     document.getElementById("ia-apply-count").textContent = n;
   }));
+}
+
+// Renderiza texto da mensagem (HTML básico seguro) para o preview
+function _renderMsgPreviewText(text, parseMode) {
+  let t = text || "";
+  if ((parseMode || "HTML").toUpperCase() === "HTML") {
+    t = t.replace(/<tg-emoji[^>]*>([\s\S]*?)<\/tg-emoji>/g, "$1")
+         .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, "")
+         .replace(/<script[\s\S]*?<\/script>/gi, "")
+         .replace(/\n/g, "<br>");
+  } else {
+    t = esc(t).replace(/\n/g, "<br>");
+  }
+  return t;
+}
+
+// Visualiza uma mensagem gerada pela IA (duplo-clique)
+function viewAiMessage(i) {
+  const m = _aiMessages[i];
+  if (!m) return;
+
+  const scheds = (m.schedules || []).map(s => {
+    const col = _aiColor(s.group);
+    const days = (s.days || []).map(d => DAYS.find(x => x.k === d)?.l || d).join(" ");
+    return `<span class="sched-tag" style="border-color:${_hexA(col,.55)};color:${col};background:${_hexA(col,.12)};">
+      ${esc(_aiGroupName(s.group))} · ${esc(s.time||"")} · ${esc(days)}</span>`;
+  }).join(" ") || '<span style="color:var(--text-muted);font-size:.78rem;">sem agendamento</span>';
+
+  let badges = "";
+  if (m.candle_symbol) badges += `<span class="badge-asset">${esc(m.candle_symbol)}</span> `;
+  if (m.conditional_enabled) badges += `<span class="badge-candle-wait"><i class="fas fa-code-branch"></i> condicional</span>`;
+
+  // bloco condicional WIN/LOSS, se houver
+  function condBlock(side, data, color, label) {
+    if (!data || !(data.text || data.image || data.video_note || data.sticker)) return "";
+    let body = "";
+    if (data.sticker) body += `<div style="font-size:.78rem;color:var(--text-muted);"><i class="fas fa-face-grin-stars me-1"></i>Sticker: <code>${esc((data.sticker||"").slice(0,24))}…</code></div>`;
+    if (data.video_note) body += `<div style="font-size:.78rem;color:var(--text-muted);"><i class="fas fa-circle-play me-1"></i>Vídeo bolinha</div>`;
+    if (data.image) body += `<div style="font-size:.78rem;color:var(--text-muted);"><i class="fas fa-image me-1"></i>Imagem</div>`;
+    if (data.text) body += `<div class="tg-bubble" style="margin-top:5px;">${_renderMsgPreviewText(data.text, data.parse_mode)}</div>`;
+    return `<div style="border:1px solid ${_hexA(color,.4)};border-radius:10px;padding:10px;margin-top:8px;">
+      <div style="font-weight:700;color:${color};font-size:.8rem;margin-bottom:4px;">${label}</div>${body}</div>`;
+  }
+
+  const body = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      <span class="msg-title" style="font-size:1rem;">${esc(m.name || "Sem nome")}</span>${badges}
+    </div>
+    <div class="tg-preview-outer" style="min-height:auto;max-height:none;margin-bottom:12px;">
+      <div class="tg-preview-body" style="justify-content:flex-start;">
+        <div class="tg-bubble-row">
+          <div class="tg-bubble-avatar">B</div>
+          <div class="tg-bubble-wrap">
+            <div class="tg-bubble">${_renderMsgPreviewText(m.text, m.parse_mode) || '<i style="color:var(--text-muted);">(sem texto)</i>'}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="section-label">Agendamentos</div>
+    <div class="sched-tags">${scheds}</div>
+    ${m.conditional_enabled ? `<div class="section-label" style="margin-top:14px;">Condicionais</div>
+      ${condBlock("win", m.conditional_win, "#34d399", "✓ WIN") || ""}
+      ${condBlock("loss", m.conditional_loss, "#f87171", "✗ LOSS") || ""}
+      ${(!m.conditional_win && !m.conditional_loss) ? '<div style="font-size:.78rem;color:var(--text-muted);">Sem conteúdo condicional definido.</div>' : ""}` : ""}
+  `;
+
+  document.getElementById("ai-view-body").innerHTML = body;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById("aiViewModal")).show();
 }
 
 async function applyAiFlow() {
