@@ -1407,6 +1407,18 @@ let _flowOrder = {};        // {group_key: [message_id, ...]} (legado/ordenaçã
 let _flowLayout = {};       // {group_key: {message_id: {x, y}}} posições no board
 let _flowGroup = null;      // grupo selecionado na vista de fluxo
 
+const _GROUP_DEFAULT_COLOR = "#7c3aed";
+function _groupColor(key) {
+  const c = cfg.groups?.[key]?.color;
+  return (c && /^#[0-9a-fA-F]{6}$/.test(c)) ? c : _GROUP_DEFAULT_COLOR;
+}
+// converte #rrggbb + alpha em rgba()
+function _hexA(hex, a) {
+  const h = (hex || _GROUP_DEFAULT_COLOR).replace("#", "");
+  const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
 const DAYS = [
   { k: "mon", l: "Seg" }, { k: "tue", l: "Ter" }, { k: "wed", l: "Qua" },
   { k: "thu", l: "Qui" }, { k: "fri", l: "Sex" }, { k: "sat", l: "Sáb" }, { k: "sun", l: "Dom" }
@@ -1703,8 +1715,12 @@ function renderFlow() {
   pillsEl.innerHTML = keys.map(k => {
     const count  = _flowItems(k).length;
     const active = k === _flowGroup;
-    return `<div class="flow-group-pill ${active ? "active" : ""}" onclick="selectFlowGroup('${esc(k)}')">
-      <i class="fas fa-users-rectangle"></i> ${esc(groups[k].name || k)}
+    const col = _groupColor(k);
+    const style = active
+      ? `border-color:${col};background:${_hexA(col,.18)};color:#fff;`
+      : `border-left:3px solid ${col};`;
+    return `<div class="flow-group-pill ${active ? "active" : ""}" style="${style}" onclick="selectFlowGroup('${esc(k)}')">
+      <i class="fas fa-users-rectangle" style="color:${col};"></i> ${esc(groups[k].name || k)}
       <span class="gcount">${count}</span>
     </div>`;
   }).join("");
@@ -1740,7 +1756,7 @@ function renderFlowCanvas() {
     <div class="flow-board" id="flow-board">
       <div class="flow-canvas-inner" id="flow-canvas-inner">
         <svg class="flow-arrows" id="flow-arrows"></svg>
-        <div class="flow-start-node" id="flow-start-node"><i class="fas fa-up-down-left-right"></i><i class="fab fa-telegram"></i> ${esc(gname)}</div>
+        <div class="flow-start-node" id="flow-start-node" style="background:linear-gradient(135deg, ${_groupColor(_flowGroup)}, ${_hexA(_groupColor(_flowGroup),.75)});box-shadow:0 6px 20px ${_hexA(_groupColor(_flowGroup),.4)};"><i class="fas fa-up-down-left-right"></i><i class="fab fa-telegram"></i> ${esc(gname)}</div>
         ${items.map(it => _flowNodeHtml(it)).join("")}
       </div>
       <div class="flow-zoom-ctrl">
@@ -1779,13 +1795,14 @@ function _flowNodeHtml(it) {
   else if (msg.candle_result === "loss") badges += `<span class="badge-loss"><i class="fas fa-times-circle"></i> LOSS</span>`;
   if (days) badges += `<span class="sched-tag">${esc(days)}</span>`;
 
+  const col = _groupColor(_flowGroup);
   return `
-    <div class="flow-node ${active ? "" : "inactive"}" data-mid="${esc(msg.id)}">
+    <div class="flow-node ${active ? "" : "inactive"}" data-mid="${esc(msg.id)}" style="border-left:3px solid ${col};">
       <span class="flow-par-badge"><i class="fas fa-bolt"></i> paralelo</span>
-      <div class="flow-node-bar"></div>
+      <div class="flow-node-bar" style="background:${col};"></div>
       <div class="flow-node-body">
         <i class="fas fa-grip-vertical flow-node-handle"></i>
-        <div class="flow-time"><span class="ft-h">${esc(time)}</span><span class="ft-d">M1</span></div>
+        <div class="flow-time" style="color:${col};"><span class="ft-h">${esc(time)}</span><span class="ft-d">M1</span></div>
         <div class="flow-node-info">
           <div class="flow-node-name">${esc(msg.name || "Sem nome")}</div>
           <div class="flow-node-meta">${badges || '<span style="font-size:.74rem;color:var(--text-muted);">sem marcadores</span>'}</div>
@@ -1876,7 +1893,7 @@ function _drawFlowArrows() {
   nodes.forEach(n => n.el.classList.remove("parallel"));
   rows.forEach(r => { if (r.nodes.length > 1) r.nodes.forEach(n => n.el.classList.add("parallel")); });
 
-  const C = "#7c3aed";
+  const C = _groupColor(_flowGroup);
   let paths = "";
   const startEl = document.getElementById("flow-start-node");
   const sCx = startEl.offsetLeft + startEl.offsetWidth / 2;
@@ -2946,6 +2963,10 @@ function renderGroupsList() {
   document.getElementById("groups-list").innerHTML =
     Object.entries(groups).map(([k, g]) => `
       <div class="config-row row g-2 align-items-end" data-gk="${esc(k)}">
+        <div class="col-auto">
+          <label class="form-label">Cor</label>
+          <input type="color" class="form-control form-control-sm form-control-color g-color" value="${esc(g.color || _GROUP_DEFAULT_COLOR)}" title="Cor do grupo no fluxo" style="width:42px;height:34px;padding:3px;cursor:pointer;">
+        </div>
         <div class="col-2">
           <label class="form-label">Chave</label>
           <input class="form-control form-control-sm" value="${esc(k)}" readonly style="opacity:.5;cursor:not-allowed;">
@@ -2954,7 +2975,7 @@ function renderGroupsList() {
           <label class="form-label">Nome</label>
           <input class="form-control form-control-sm g-name" value="${esc(g.name || "")}" placeholder="Nome do grupo">
         </div>
-        <div class="col-4">
+        <div class="col-3">
           <label class="form-label">ID do chat (ex: -1001234567890)</label>
           <input class="form-control form-control-sm g-id" value="${esc(g.id || "")}" placeholder="-100...">
         </div>
@@ -3002,7 +3023,7 @@ function addGroupRow() {
   if (!key || !/^\w+$/.test(key)) return;
   if (cfg.groups?.[key]) { toast("Chave já existe", "danger"); return; }
   if (!cfg.groups) cfg.groups = {};
-  cfg.groups[key] = { id: "", name: "", default_buttons: [] };
+  cfg.groups[key] = { id: "", name: "", default_buttons: [], color: _GROUP_DEFAULT_COLOR };
   renderGroupsList();
 }
 
@@ -3036,6 +3057,7 @@ async function saveConfig() {
       ...(cfg.groups[k] || {}),
       name: row.querySelector(".g-name").value,
       id:   row.querySelector(".g-id").value,
+      color: row.querySelector(".g-color")?.value || _GROUP_DEFAULT_COLOR,
       default_buttons: defBtns,
     };
   });

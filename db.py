@@ -141,6 +141,9 @@ def init_db() -> None:
         cur.execute(
             "ALTER TABLE messages ADD COLUMN IF NOT EXISTS candle_symbol TEXT"
         )
+        cur.execute(
+            "ALTER TABLE groups ADD COLUMN IF NOT EXISTS color TEXT"
+        )
     logger.info("Banco de dados PostgreSQL pronto")
 
 
@@ -219,8 +222,8 @@ def load_config() -> dict:
         cur.execute("SELECT id, name, token, active FROM bots ORDER BY name")
         bots = [{"id": r[0], "name": r[1], "token": r[2], "active": r[3]} for r in cur.fetchall()]
 
-        cur.execute("SELECT key, name, chat_id, default_buttons FROM groups ORDER BY key")
-        groups = {r[0]: {"name": r[1], "id": r[2], "default_buttons": r[3]} for r in cur.fetchall()}
+        cur.execute("SELECT key, name, chat_id, default_buttons, color FROM groups ORDER BY key")
+        groups = {r[0]: {"name": r[1], "id": r[2], "default_buttons": r[3], "color": r[4]} for r in cur.fetchall()}
 
         cur.execute("SELECT key, label, url FROM button_configs ORDER BY key")
         button_configs = {r[0]: {"label": r[1], "url": r[2]} for r in cur.fetchall()}
@@ -263,8 +266,8 @@ def save_config(cfg: dict) -> None:
         cur.execute("DELETE FROM groups")
         for key, g in cfg.get("groups", {}).items():
             cur.execute(
-                "INSERT INTO groups(key,name,chat_id,default_buttons) VALUES(%s,%s,%s,%s)",
-                (key, g.get("name",""), g.get("id",""), json.dumps(g.get("default_buttons",[])))
+                "INSERT INTO groups(key,name,chat_id,default_buttons,color) VALUES(%s,%s,%s,%s,%s)",
+                (key, g.get("name",""), g.get("id",""), json.dumps(g.get("default_buttons",[])), g.get("color"))
             )
 
         cur.execute("DELETE FROM button_configs")
