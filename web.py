@@ -597,14 +597,16 @@ def create_app() -> Flask:
             '{"groups":[{"key":"slug_sem_espacos","name":"Nome do Grupo","color":"#7c3aed"}],'
             '"messages":[{"name":"texto curto","text":"conteudo (pode usar <b> <i>)",'
             '"parse_mode":"HTML","active":true,"candle_symbol":"BTCUSD-OTC ou null",'
-            '"conditional_enabled":false,'
+            '"conditional_enabled":true,'
+            '"conditional_win":{"text":"mensagem de vitoria","parse_mode":"HTML","show_buttons":true},'
+            '"conditional_loss":{"text":"mensagem de derrota","parse_mode":"HTML","show_buttons":true},'
             '"schedules":[{"group":"<chave_do_grupo>","time":"HH:MM",'
             '"days":["mon","tue","wed","thu","fri"],"buttons":[]}]}]}\n\n'
             f"Grupos EXISTENTES (use a CHAVE no campo group):\n{group_lines}\n\n"
             f"Botões disponíveis (chaves): {buttons}\n"
-            f"Ativos disponíveis para candle_symbol: {pares}\n\n"
+            f"Ativos disponíveis para candle_symbol (use EXATAMENTE uma destas strings):\n{pares}\n\n"
             f"Mensagens/modelos JÁ EXISTENTES deste cliente (pode copiar/replicar fielmente quando pedido):\n{existing_block}\n\n"
-            "Regras:\n"
+            "Regras gerais:\n"
             "- Você PODE criar novos grupos em \"groups\" para organizar (key em minúsculas, sem espaços/acentos; "
             "  inclua uma cor hex). Só crie grupos novos se o usuário pedir para organizar/separar.\n"
             "- Para copiar um modelo existente, reproduza fielmente name/text/candle_symbol/condicional, "
@@ -613,7 +615,18 @@ def create_app() -> Flask:
             "  use a key que você definiu em \"groups\".\n"
             "- days aceita: mon,tue,wed,thu,fri,sat,sun ; time em 24h HH:MM.\n"
             "- Não invente chaves de botão fora da lista.\n"
-            f"- Se o usuário não citar grupo nem pedir grupo novo, use \"{first_group}\".\n"
+            f"- Se o usuário não citar grupo nem pedir grupo novo, use \"{first_group}\".\n\n"
+            "DEFINIÇÃO AUTOMÁTICA DE ATIVO E CONDICIONAL (muito importante):\n"
+            "- Deduza o ATIVO pelo contexto da mensagem e escolha o candle_symbol correspondente da lista. "
+            "Ex.: fala de Bitcoin/BTC -> BTCUSD-OTC; Ethereum/ETH -> ETHUSD-OTC; Euro/EUR/USD -> EURUSD-OTC; "
+            "Ouro/Gold -> XAUUSD-OTC; Apple -> APPLE-OTC; etc. Se não der para deduzir, use BTCUSD-OTC.\n"
+            "- Toda mensagem que for um SINAL de entrada/operação DEVE ter candle_symbol definido, "
+            "conditional_enabled=true e conteúdo em conditional_win e conditional_loss.\n"
+            "  * conditional_win.text: mensagem curta comemorando o acerto (ex.: '✅ <b>WIN!</b> Mais um green confirmado 💰'). "
+            "  * conditional_loss.text: mensagem curta de gestão/encorajamento (ex.: '🔴 <b>LOSS</b>. Faz parte, gestão de banca e bora pra próxima 💪'). "
+            "  * Use HTML em ambos e mantenha coerência com o tom do sinal.\n"
+            "- Mensagens informativas (bom dia, avisos, promoções) NÃO são sinais: candle_symbol=null, "
+            "conditional_enabled=false e sem conditional_win/loss.\n"
             "- Crie um fluxo SEMANAL coerente. Retorne apenas o JSON."
         )
 
@@ -672,10 +685,24 @@ def create_app() -> Flask:
 
         valid = set(groups.keys()) | {g["key"] for g in new_groups}
         fallback = first_group or (new_groups[0]["key"] if new_groups else "")
+        valid_pares = set(pares)
         for m in msgs:
             for s in (m.get("schedules") or []):
                 if s.get("group") not in valid:
                     s["group"] = fallback
+            # valida o ativo escolhido pela IA
+            sym = m.get("candle_symbol")
+            if sym and sym not in valid_pares:
+                # tenta casar por prefixo (ex.: "BTC" -> "BTCUSD-OTC")
+                up = str(sym).upper().replace("/", "").replace("-OTC", "")
+                match = next((p for p in pares if p.upper().startswith(up[:3])), None)
+                m["candle_symbol"] = match or "BTCUSD-OTC"
+            # garante que condicionais sejam dicts
+            if m.get("conditional_enabled"):
+                if not isinstance(m.get("conditional_win"), dict):
+                    m["conditional_win"] = {}
+                if not isinstance(m.get("conditional_loss"), dict):
+                    m["conditional_loss"] = {}
 
         return jsonify({"messages": msgs, "groups": new_groups})
 
