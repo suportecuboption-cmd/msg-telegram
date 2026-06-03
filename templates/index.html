@@ -47,6 +47,32 @@
     .nav-item:hover { color: white; background: rgba(124,58,237,.15); }
     .nav-item.active { color: white; background: rgba(124,58,237,.25); border-left: 2px solid var(--accent); }
     .nav-item i { width: 16px; text-align: center; opacity: .8; }
+
+    /* ── Item IA exclusivo (brilho) ── */
+    .nav-item.nav-ia { position: relative; overflow: hidden; }
+    .nav-item.nav-ia i.ia-glow {
+      opacity: 1; color: #c4b5fd;
+      animation: iaGlow 1.8s ease-in-out infinite;
+    }
+    @keyframes iaGlow {
+      0%, 100% { color:#a78bfa; text-shadow: 0 0 4px rgba(159,103,255,.55); transform: scale(1); }
+      50%      { color:#e9d5ff; text-shadow: 0 0 10px rgba(159,103,255,1), 0 0 20px rgba(124,58,237,.75); transform: scale(1.18); }
+    }
+    .nav-item.nav-ia .ia-text {
+      background: linear-gradient(90deg,#c4b5fd,#9f67ff,#e9d5ff,#9f67ff,#c4b5fd);
+      background-size: 200% auto;
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; color: transparent;
+      font-weight: 700; animation: iaShimmer 3s linear infinite;
+    }
+    @keyframes iaShimmer { to { background-position: 200% center; } }
+    /* brilho que cruza o item de tempos em tempos */
+    .nav-item.nav-ia::after {
+      content:''; position:absolute; top:0; left:-60%; width:50%; height:100%;
+      background: linear-gradient(120deg, transparent, rgba(196,181,253,.18), transparent);
+      transform: skewX(-20deg); animation: iaSweep 4.5s ease-in-out infinite;
+    }
+    @keyframes iaSweep { 0%,60%{ left:-60%; } 85%,100%{ left:130%; } }
     .sidebar-footer { margin-top: auto; padding: 16px 18px; border-top: 1px solid var(--border); }
     .status-pill { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--text-muted); }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); animation: blink 2s infinite; }
@@ -573,9 +599,9 @@
     <a class="nav-item" onclick="showPage('flow',this)">
       <i class="fas fa-diagram-project"></i> Fluxo
     </a>
-    <a class="nav-item" onclick="showPage('ia',this)">
-      <i class="fas fa-wand-magic-sparkles"></i> IA
-      <span style="margin-left:auto;font-size:.6rem;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;padding:1px 6px;border-radius:8px;">beta</span>
+    <a class="nav-item nav-ia" onclick="showPage('ia',this)">
+      <i class="fas fa-wand-magic-sparkles ia-glow"></i> <span class="ia-text">IA</span>
+      <span style="margin-left:auto;font-size:.6rem;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;padding:1px 6px;border-radius:8px;box-shadow:0 0 8px rgba(124,58,237,.5);">beta</span>
     </a>
     <a class="nav-item" onclick="showPage('emojis',this)">
       <i class="fas fa-fire"></i> Emojis
