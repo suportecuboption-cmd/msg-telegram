@@ -464,6 +464,12 @@ def create_app() -> Flask:
             "active":     data.get("active", True),
             "parse_mode": data.get("parse_mode", "HTML"),
             "schedules":  _ensure_schedule_ids(data.get("schedules", [])),
+            # marcador de candle + condicionais (eram perdidos ao criar via POST)
+            "candle_hour":         data.get("candle_hour") or None,
+            "candle_symbol":       data.get("candle_symbol") or None,
+            "conditional_enabled": bool(data.get("conditional_enabled", False)),
+            "conditional_win":     data.get("conditional_win") or {},
+            "conditional_loss":    data.get("conditional_loss") or {},
         }
         _normalize_media(message)
         _db.upsert_message(message)

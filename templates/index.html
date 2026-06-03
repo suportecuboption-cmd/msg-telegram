@@ -1298,6 +1298,35 @@
   </div>
 </div>
 
+<!-- ── MODAL DUPLICAR FLUXO ── -->
+<div class="modal fade" id="dupFlowModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-clone me-2" style="color:var(--accent2);"></i>Duplicar fluxo</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <p style="color:var(--text-muted);font-size:.875rem;" id="dup-flow-desc">
+          Copia <b>todas as mensagens</b> deste grupo para os grupos selecionados, mantendo
+          horários, conteúdo, condicionais e o layout do fluxo. As cópias são <b>independentes</b>.
+        </p>
+        <label class="form-label">Duplicar para os grupos:</label>
+        <div id="dup-flow-groups" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <div id="dup-flow-empty" style="display:none;color:var(--text-muted);font-size:.85rem;padding:14px 0;text-align:center;">
+          <i class="fas fa-circle-info me-1"></i>Não há outros grupos. Crie outro grupo em <b>Configurações</b>.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-accent px-4" id="dup-flow-confirm" onclick="confirmDupFlow()">
+          <i class="fas fa-clone me-2"></i>Duplicar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── MODAL TESTAR CONDICIONAL ── -->
 <div class="modal fade" id="testCondModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
@@ -1703,7 +1732,10 @@ function renderFlowCanvas() {
   wrap.innerHTML = `
     <div class="flow-toolbar">
       <span class="flow-hint"><i class="fas fa-arrows-up-down-left-right"></i> Arraste os cards. <b style="color:#fbbf24;">Mesma linha = paralelo</b>. Scroll = zoom · arraste o vazio para mover.</span>
-      <button class="flow-add-btn sm" onclick="autoOrganizeFlow()"><i class="fas fa-wand-magic-sparkles"></i> Auto-organizar</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="flow-add-btn sm" onclick="openDupFlow()"><i class="fas fa-clone"></i> Duplicar para...</button>
+        <button class="flow-add-btn sm" onclick="autoOrganizeFlow()"><i class="fas fa-wand-magic-sparkles"></i> Auto-organizar</button>
+      </div>
     </div>
     <div class="flow-board" id="flow-board">
       <div class="flow-canvas-inner" id="flow-canvas-inner">
@@ -2115,6 +2147,105 @@ function autoOrganizeFlow() {
   persistFlowLayout();
   renderFlowCanvas();
   toast("Fluxo reorganizado em coluna", "success");
+}
+
+// ── Duplicar todo o fluxo (conjunto de mensagens) para outro(s) grupo(s) ──
+function openDupFlow() {
+  if (!_flowGroup) return;
+  const groups = cfg.groups || {};
+  const others = Object.keys(groups).filter(k => k !== _flowGroup);
+  const box = document.getElementById("dup-flow-groups");
+  const empty = document.getElementById("dup-flow-empty");
+  const confirmBtn = document.getElementById("dup-flow-confirm");
+
+  document.getElementById("dup-flow-desc").innerHTML =
+    `Copia <b>todas as ${_flowItems(_flowGroup).length} mensagem(ns)</b> de ` +
+    `<b style="color:#c4b5fd;">${esc(groups[_flowGroup]?.name || _flowGroup)}</b> para os grupos ` +
+    `selecionados, mantendo horários, conteúdo, condicionais e layout. As cópias são <b>independentes</b>.`;
+
+  if (others.length === 0) {
+    box.innerHTML = ""; empty.style.display = ""; confirmBtn.disabled = true;
+  } else {
+    empty.style.display = "none"; confirmBtn.disabled = false;
+    box.innerHTML = others.map(k => `
+      <label class="config-row" style="display:flex;align-items:center;gap:10px;margin:0;cursor:pointer;padding:11px 14px;">
+        <input class="form-check-input dup-grp" type="checkbox" value="${esc(k)}" style="margin:0;">
+        <span style="font-weight:600;"><i class="fas fa-users-rectangle me-2" style="color:var(--accent2);"></i>${esc(groups[k].name || k)}</span>
+        <span style="margin-left:auto;font-size:.72rem;color:var(--text-muted);">${_flowItems(k).length} já existente(s)</span>
+      </label>`).join("");
+  }
+  bootstrap.Modal.getOrCreateInstance(document.getElementById("dupFlowModal")).show();
+}
+
+async function confirmDupFlow() {
+  const targets = Array.from(document.querySelectorAll(".dup-grp:checked")).map(c => c.value);
+  if (targets.length === 0) { toast("Selecione ao menos um grupo", "danger"); return; }
+
+  const items = _flowItems(_flowGroup);
+  if (items.length === 0) { toast("Nada para duplicar neste grupo", "danger"); return; }
+
+  const btn = document.getElementById("dup-flow-confirm");
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Duplicando...';
+
+  let created = 0;
+  try {
+    for (const tg of targets) {
+      for (const it of items) {
+        const m = it.msg;
+        const payload = {
+          name: m.name,
+          text: m.text || "",
+          image: m.image || null,
+          video_note: m.video_note || null,
+          active: m.active !== false,
+          parse_mode: m.parse_mode || "HTML",
+          candle_symbol: m.candle_symbol || null,
+          conditional_enabled: !!m.conditional_enabled,
+          conditional_win: m.conditional_win || {},
+          conditional_loss: m.conditional_loss || {},
+          schedules: [{
+            group: tg,
+            time: it.sched.time || "09:00",
+            days: it.sched.days || ["mon","tue","wed","thu","fri"],
+            buttons: it.sched.buttons || [],
+            active: it.sched.active !== false,
+          }],
+        };
+        const r = await fetch("/api/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (r.ok) {
+          const newMsg = await r.json();
+          // replica a posição no board do grupo de destino
+          const srcPos = _flowLayout[_flowGroup]?.[m.id];
+          if (srcPos && newMsg.id) {
+            if (!_flowLayout[tg]) _flowLayout[tg] = {};
+            _flowLayout[tg][newMsg.id] = { x: srcPos.x, y: srcPos.y };
+          }
+          created++;
+        }
+      }
+      // replica posição do nó do grupo
+      const srcStart = _flowLayout[_flowGroup]?.__start;
+      if (srcStart) {
+        if (!_flowLayout[tg]) _flowLayout[tg] = {};
+        _flowLayout[tg].__start = { x: srcStart.x, y: srcStart.y };
+      }
+    }
+    await persistFlowLayout();
+    await fetchMessages();
+    renderFlow();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("dupFlowModal")).hide();
+    toast(`✅ ${created} mensagem(ns) duplicada(s) para ${targets.length} grupo(s)`, "success");
+  } catch (e) {
+    toast("Erro ao duplicar fluxo", "danger");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-clone me-2"></i>Duplicar';
+  }
 }
 
 // ═══════════════════════ WIZARD (4 passos) ═══════════════
