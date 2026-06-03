@@ -21,3 +21,12 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Dados de runtime / locais (não versionar — sensíveis ou gerados)
+.secret_key
+users.json
+emoji_map.json
+flow_order.json
+flow_layout.json
+uploads/
+config.local.json
