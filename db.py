@@ -23,6 +23,7 @@ _MESSAGES_FILE   = _DATA / "messages.json"
 _EMOJI_MAP_FILE  = _DATA / "emoji_map.json"
 _USERS_FILE      = _DATA / "users.json"
 _FLOW_ORDER_FILE = _DATA / "flow_order.json"
+_SETTINGS_FILE   = _DATA / "app_settings.json"
 _SECRET_KEY_FILE = _DATA / ".secret_key"
 
 _pool = None
@@ -203,6 +204,43 @@ def get_or_create_secret_key() -> str:
             (key,),
         )
     return key
+
+
+# ── Settings genéricos (chave/valor) ───────────────────────────────────────────
+
+def get_setting(key: str, default=None):
+    """Lê um setting avulso (ex.: chave de API). PG → tabela settings; local → app_settings.json."""
+    if not use_postgres():
+        if _SETTINGS_FILE.exists():
+            try:
+                return json.loads(_SETTINGS_FILE.read_text(encoding="utf-8")).get(key, default)
+            except Exception:
+                return default
+        return default
+    with _conn() as c:
+        cur = c.cursor()
+        cur.execute("SELECT value FROM settings WHERE key=%s", (key,))
+        row = cur.fetchone()
+    return row[0] if row else default
+
+
+def set_setting(key: str, value) -> None:
+    if not use_postgres():
+        data = {}
+        if _SETTINGS_FILE.exists():
+            try:
+                data = json.loads(_SETTINGS_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
+        data[key] = value
+        _SETTINGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return
+    with _conn() as c:
+        c.cursor().execute(
+            "INSERT INTO settings(key,value) VALUES(%s,%s) "
+            "ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+            (key, str(value)),
+        )
 
 
 # ── Config ────────────────────────────────────────────────────────────────────

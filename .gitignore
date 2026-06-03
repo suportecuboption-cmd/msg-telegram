@@ -28,5 +28,6 @@ users.json
 emoji_map.json
 flow_order.json
 flow_layout.json
+app_settings.json
 uploads/
 config.local.json

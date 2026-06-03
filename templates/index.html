@@ -573,6 +573,10 @@
     <a class="nav-item" onclick="showPage('flow',this)">
       <i class="fas fa-diagram-project"></i> Fluxo
     </a>
+    <a class="nav-item" onclick="showPage('ia',this)">
+      <i class="fas fa-wand-magic-sparkles"></i> IA
+      <span style="margin-left:auto;font-size:.6rem;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;padding:1px 6px;border-radius:8px;">beta</span>
+    </a>
     <a class="nav-item" onclick="showPage('emojis',this)">
       <i class="fas fa-fire"></i> Emojis
     </a>
@@ -640,6 +644,76 @@
 
     <!-- Canvas do fluxograma -->
     <div id="flow-canvas-wrap"></div>
+  </div>
+
+  <!-- ── IA ── -->
+  <div id="page-ia" style="display:none;">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title"><i class="fas fa-wand-magic-sparkles me-2" style="color:var(--accent2);"></i>Gerador de Fluxos com IA</h1>
+        <p class="page-subtitle">Descreva o que quer e a IA (DeepSeek) cria o fluxo semanal de mensagens</p>
+      </div>
+    </div>
+
+    <!-- Configuração da chave (aparece se não houver) -->
+    <div class="card-box mb-4" id="ia-key-box" style="display:none;border-color:rgba(245,158,11,.3);">
+      <div class="section-label"><i class="fas fa-key me-1" style="color:#fbbf24;"></i>Chave da API DeepSeek</div>
+      <p style="color:var(--text-muted);font-size:.84rem;">
+        Crie uma chave em <b>platform.deepseek.com</b> e cole abaixo. Fica salva no servidor.
+      </p>
+      <div class="input-group">
+        <input type="password" class="form-control" id="ia-api-key" placeholder="sk-...">
+        <button class="btn btn-accent px-4" onclick="saveAiKey()"><i class="fas fa-save me-2"></i>Salvar</button>
+      </div>
+    </div>
+
+    <div class="row g-4">
+      <!-- Prompt -->
+      <div class="col-lg-5">
+        <div class="card-box">
+          <div class="section-label"><i class="fas fa-pen-to-square me-1"></i>Seu pedido</div>
+          <textarea class="form-control" id="ia-prompt" rows="7"
+            placeholder="Ex: Crie sinais de COMPRA de BTC de segunda a sexta às 09:00, 12:00 e 15:00 no grupo Marlon teste, com verificação WIN/LOSS. Adicione uma mensagem de bom dia às 08:00."></textarea>
+
+          <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;">
+            <span style="font-size:.72rem;color:var(--text-muted);width:100%;">Exemplos rápidos:</span>
+            <button class="btn btn-xs btn-outline-secondary ia-example">3 sinais BTC seg-sex (9h/12h/15h) com WIN/LOSS</button>
+            <button class="btn btn-xs btn-outline-secondary ia-example">Bom dia 08h + sinal EUR/USD 10h todos os dias</button>
+            <button class="btn btn-xs btn-outline-secondary ia-example">Agenda semanal completa de sinais variados</button>
+          </div>
+
+          <button class="btn btn-accent w-100 mt-3" id="ia-gen-btn" onclick="generateAiFlow()">
+            <i class="fas fa-wand-magic-sparkles me-2"></i>Gerar fluxo
+          </button>
+        </div>
+      </div>
+
+      <!-- Resultado -->
+      <div class="col-lg-7">
+        <div class="card-box" style="min-height:280px;">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="section-label mb-0"><i class="fas fa-list-check me-1"></i>Resultado</div>
+            <div id="ia-target-wrap" style="display:none;">
+              <label style="font-size:.74rem;color:var(--text-muted);">Grupo destino</label>
+              <select class="form-select form-select-sm" id="ia-target-group" style="display:inline-block;width:auto;margin-left:6px;">
+                <option value="">Manter o sugerido</option>
+              </select>
+            </div>
+          </div>
+          <div id="ia-result">
+            <div class="empty" style="padding:40px 16px;">
+              <i class="fas fa-robot"></i>
+              <div>O fluxo gerado aparece aqui.<br>Descreva seu pedido e clique em "Gerar fluxo".</div>
+            </div>
+          </div>
+          <div id="ia-apply-wrap" style="display:none;margin-top:14px;text-align:right;">
+            <button class="btn btn-outline-success px-4" onclick="applyAiFlow()">
+              <i class="fas fa-circle-check me-2"></i>Criar <span id="ia-apply-count">0</span> mensagem(ns)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ── BOT ── -->
@@ -1557,7 +1631,7 @@ async function fetchMessages() {
 }
 
 // ───────────────────────── Navigation ────────────────────
-const PAGES = ["messages", "flow", "emojis", "bot", "config", "admin"];
+const PAGES = ["messages", "flow", "ia", "emojis", "bot", "config", "admin"];
 
 function showPage(page, el) {
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
@@ -1571,6 +1645,7 @@ function showPage(page, el) {
   if (page === "emojis") fetchEmojiMap().then(renderEmojiMap);
   if (page === "admin")  loadAdminPage();
   if (page === "flow")   renderFlow();
+  if (page === "ia")     loadAiPage();
   closeSidebar();
 }
 
@@ -2280,6 +2355,156 @@ async function confirmDupFlow() {
     btn.disabled = false;
     btn.innerHTML = '<i class="fas fa-clone me-2"></i>Duplicar';
   }
+}
+
+// ═══════════════════════ IA (DeepSeek) ═══════════════════
+
+let _aiMessages = [];   // mensagens geradas aguardando aplicação
+
+async function loadAiPage() {
+  // configura chips de exemplo (uma vez)
+  document.querySelectorAll(".ia-example").forEach(b => {
+    if (!b._bound) {
+      b._bound = true;
+      b.addEventListener("click", () => { document.getElementById("ia-prompt").value = b.textContent; });
+    }
+  });
+  // grupos destino
+  const sel = document.getElementById("ia-target-group");
+  if (sel) {
+    sel.innerHTML = `<option value="">Manter o sugerido</option>` +
+      Object.entries(cfg.groups || {}).map(([k, g]) =>
+        `<option value="${esc(k)}">${esc(g.name || k)}</option>`).join("");
+  }
+  // chave configurada?
+  try {
+    const r = await fetch("/api/ai/config");
+    const d = await r.json();
+    document.getElementById("ia-key-box").style.display = d.has_key ? "none" : "";
+  } catch {}
+}
+
+async function saveAiKey() {
+  const key = document.getElementById("ia-api-key").value.trim();
+  if (!key) { toast("Cole a chave da API", "danger"); return; }
+  const r = await fetch("/api/ai/config", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_key: key }),
+  });
+  if (r.ok) {
+    document.getElementById("ia-key-box").style.display = "none";
+    document.getElementById("ia-api-key").value = "";
+    toast("Chave salva!", "success");
+  } else { toast("Erro ao salvar chave", "danger"); }
+}
+
+async function generateAiFlow() {
+  const prompt = document.getElementById("ia-prompt").value.trim();
+  if (!prompt) { toast("Descreva o que deseja gerar", "danger"); return; }
+
+  const btn = document.getElementById("ia-gen-btn");
+  const res = document.getElementById("ia-result");
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Gerando...';
+  res.innerHTML = `<div class="empty" style="padding:40px 16px;"><i class="fas fa-robot fa-bounce"></i><div>A IA está montando seu fluxo...</div></div>`;
+  document.getElementById("ia-apply-wrap").style.display = "none";
+
+  try {
+    const r = await fetch("/api/ai/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      res.innerHTML = `<div style="color:#f87171;font-size:.86rem;padding:14px;"><i class="fas fa-triangle-exclamation me-2"></i>${esc(d.error || "Erro")}</div>` +
+        (d.raw ? `<pre style="font-size:.72rem;color:var(--text-muted);white-space:pre-wrap;max-height:200px;overflow:auto;">${esc(d.raw)}</pre>` : "");
+      if (d.error && d.error.includes("chave")) document.getElementById("ia-key-box").style.display = "";
+      return;
+    }
+    _aiMessages = d.messages || [];
+    renderAiResult();
+    document.getElementById("ia-target-wrap").style.display = _aiMessages.length ? "" : "none";
+  } catch (e) {
+    res.innerHTML = `<div style="color:#f87171;padding:14px;">Erro de conexão.</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-wand-magic-sparkles me-2"></i>Gerar fluxo';
+  }
+}
+
+function renderAiResult() {
+  const res = document.getElementById("ia-result");
+  if (!_aiMessages.length) {
+    res.innerHTML = `<div class="empty" style="padding:40px 16px;"><i class="fas fa-robot"></i><div>Nenhuma mensagem gerada.</div></div>`;
+    document.getElementById("ia-apply-wrap").style.display = "none";
+    return;
+  }
+  res.innerHTML = _aiMessages.map((m, i) => {
+    const scheds = (m.schedules || []).map(s => {
+      const gname = cfg.groups?.[s.group]?.name || s.group || "?";
+      const col = _groupColor(s.group);
+      const days = (s.days || []).map(d => DAYS.find(x => x.k === d)?.l || d).join(" ");
+      return `<span class="sched-tag" style="border-color:${_hexA(col,.55)};color:${col};background:${_hexA(col,.12)};">${esc(gname)} · ${esc(s.time||"")} · ${esc(days)}</span>`;
+    }).join("");
+    const sym = m.candle_symbol ? `<span class="badge-asset">${esc(m.candle_symbol)}</span>` : "";
+    const cond = m.conditional_enabled ? `<span class="badge-candle-wait"><i class="fas fa-code-branch"></i> condicional</span>` : "";
+    return `
+      <div class="config-row" style="margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
+          <input class="form-check-input ia-pick" type="checkbox" data-i="${i}" checked style="margin:0;">
+          <b>${esc(m.name || "Sem nome")}</b> ${sym}${cond}
+        </div>
+        <div class="msg-preview" style="max-width:100%;margin:2px 0 6px;">${esc((m.text||"").replace(/<[^>]+>/g,"")).substring(0,120)}</div>
+        <div class="sched-tags">${scheds || '<span style="font-size:.74rem;color:var(--text-muted);">sem agendamento</span>'}</div>
+      </div>`;
+  }).join("");
+  document.getElementById("ia-apply-wrap").style.display = "";
+  document.getElementById("ia-apply-count").textContent = _aiMessages.length;
+
+  document.querySelectorAll(".ia-pick").forEach(cb => cb.addEventListener("change", () => {
+    const n = document.querySelectorAll(".ia-pick:checked").length;
+    document.getElementById("ia-apply-count").textContent = n;
+  }));
+}
+
+async function applyAiFlow() {
+  const picks = Array.from(document.querySelectorAll(".ia-pick:checked")).map(cb => +cb.dataset.i);
+  if (!picks.length) { toast("Selecione ao menos uma mensagem", "danger"); return; }
+  const override = document.getElementById("ia-target-group").value;
+
+  let created = 0;
+  for (const i of picks) {
+    const m = _aiMessages[i];
+    if (!m) continue;
+    const schedules = (m.schedules || []).map(s => ({
+      group: override || s.group,
+      time: s.time || "09:00",
+      days: s.days || ["mon","tue","wed","thu","fri"],
+      buttons: s.buttons || [],
+      active: true,
+    }));
+    const payload = {
+      name: m.name || "Mensagem IA",
+      text: m.text || "",
+      active: m.active !== false,
+      parse_mode: m.parse_mode || "HTML",
+      candle_symbol: m.candle_symbol || null,
+      conditional_enabled: !!m.conditional_enabled,
+      conditional_win: m.conditional_win || {},
+      conditional_loss: m.conditional_loss || {},
+      schedules,
+    };
+    const r = await fetch("/api/messages", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (r.ok) created++;
+  }
+  await fetchMessages();
+  renderMsgList();
+  toast(`✅ ${created} mensagem(ns) criada(s) pela IA`, "success");
+  _aiMessages = [];
+  renderAiResult();
 }
 
 // ═══════════════════════ WIZARD (4 passos) ═══════════════

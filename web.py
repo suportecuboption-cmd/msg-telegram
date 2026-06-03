@@ -537,6 +537,113 @@ def create_app() -> Flask:
             logger.warning("Falha ao buscar pares da API: %s", exc)
         return jsonify({"pares": _DEFAULT_PARES})
 
+    # ── IA (DeepSeek) ───────────────────────────────────────────────────────────
+
+    def _deepseek_key():
+        return os.getenv("DEEPSEEK_API_KEY") or _db.get_setting("deepseek_api_key", "") or ""
+
+    @app.route("/api/ai/config", methods=["GET"])
+    @login_required
+    def ai_config():
+        return jsonify({
+            "has_key": bool(_deepseek_key()),
+            "from_env": bool(os.getenv("DEEPSEEK_API_KEY")),
+        })
+
+    @app.route("/api/ai/config", methods=["POST"])
+    @login_required
+    def ai_set_config():
+        data = request.get_json(force=True) or {}
+        key = (data.get("api_key") or "").strip()
+        _db.set_setting("deepseek_api_key", key)
+        return jsonify({"success": True, "has_key": bool(_deepseek_key())})
+
+    @app.route("/api/ai/generate", methods=["POST"])
+    @login_required
+    def ai_generate():
+        key = _deepseek_key()
+        if not key:
+            return jsonify({"error": "Configure a chave da API DeepSeek na aba IA."}), 400
+
+        body = request.get_json(force=True) or {}
+        prompt = (body.get("prompt") or "").strip()
+        if not prompt:
+            return jsonify({"error": "Descreva o que deseja gerar."}), 400
+
+        cfg = _load_config()
+        groups = cfg.get("groups", {})
+        buttons = list(cfg.get("button_configs", {}).keys())
+        pares = [p["symbol"] for p in _DEFAULT_PARES]
+        group_lines = "\n".join(f'- "{k}" = {g.get("name", k)}' for k, g in groups.items()) or "(nenhum)"
+        first_group = next(iter(groups.keys()), "")
+
+        system = (
+            "Você cria fluxos de mensagens agendadas para um bot de Telegram de sinais de trading.\n"
+            "Responda SOMENTE com um objeto JSON válido, sem comentários, no formato:\n"
+            '{"messages":[{"name":"texto curto","text":"conteudo da mensagem (pode usar <b> <i>)",'
+            '"parse_mode":"HTML","active":true,"candle_symbol":"BTCUSD-OTC ou null",'
+            '"conditional_enabled":false,'
+            '"schedules":[{"group":"<chave_do_grupo>","time":"HH:MM",'
+            '"days":["mon","tue","wed","thu","fri"],"buttons":[]}]}]}\n\n'
+            f"Grupos disponíveis (use a CHAVE no campo group):\n{group_lines}\n\n"
+            f"Botões disponíveis (chaves): {buttons}\n"
+            f"Ativos disponíveis para candle_symbol: {pares}\n\n"
+            "Regras:\n"
+            "- days aceita: mon,tue,wed,thu,fri,sat,sun\n"
+            "- time em 24h no formato HH:MM\n"
+            "- Crie um fluxo SEMANAL coerente conforme o pedido do usuário.\n"
+            "- Não invente chaves de grupo/botão fora das listas. "
+            f"Se o usuário não citar grupo, use \"{first_group}\".\n"
+            "- Retorne apenas o JSON."
+        )
+
+        payload = {
+            "model": "deepseek-chat",
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.7,
+            "stream": False,
+        }
+
+        req = urllib.request.Request(
+            "https://api.deepseek.com/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                result = json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            try:
+                detail = json.loads(exc.read()).get("error", {}).get("message", str(exc))
+            except Exception:
+                detail = str(exc)
+            return jsonify({"error": f"DeepSeek: {detail}"}), 502
+        except Exception as exc:
+            return jsonify({"error": f"Falha ao chamar DeepSeek: {exc}"}), 502
+
+        content = (((result.get("choices") or [{}])[0]).get("message") or {}).get("content", "")
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            return jsonify({"error": "A IA não retornou JSON válido.", "raw": content}), 502
+
+        msgs = parsed.get("messages") if isinstance(parsed, dict) else None
+        if not isinstance(msgs, list):
+            return jsonify({"error": "JSON sem lista 'messages'.", "raw": content}), 502
+
+        # Sanitiza: garante chaves de grupo válidas
+        valid = set(groups.keys())
+        for m in msgs:
+            for s in (m.get("schedules") or []):
+                if s.get("group") not in valid:
+                    s["group"] = first_group
+        return jsonify({"messages": msgs})
+
     @app.route("/api/messages/<message_id>/test-conditional", methods=["POST"])
     @login_required
     def test_conditional(message_id):
