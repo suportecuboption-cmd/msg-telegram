@@ -839,7 +839,8 @@ def seed_emoji_defaults() -> None:
 def _apply_env(cfg: dict) -> None:
     token = os.getenv("BOT_TOKEN")
     if token:
+        # Mantém apenas como token GLOBAL de fallback (usado no startup quando um
+        # bot não tem token válido — ver main.py). NÃO sobrescrevemos o token de
+        # cada bot aqui, senão todos os bots ativos passam a apontar para o mesmo
+        # token e o multi-bot quebra (o token "volta ao inicial" ao salvar).
         cfg["bot_token"] = token
-        for b in cfg.get("bots", []):
-            if b.get("active"):
-                b["token"] = token
