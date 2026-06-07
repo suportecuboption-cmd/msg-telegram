@@ -100,14 +100,103 @@ def preprocess_animated_emoji(text: str, emoji_map: dict) -> str:
 # ── Handler de registro automático de emojis animados ────────────────────────
 
 async def cmd_start(update, context) -> None:
+    try:
+        me = await context.bot.get_me()
+        add_url = f"https://t.me/{me.username}?startgroup=novo"
+    except Exception:
+        add_url = None
+
+    kb = None
+    if add_url:
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("➕ Adicionar a um grupo", url=add_url)
+        ]])
+
     await update.message.reply_text(
         "🤖 <b>Bot Manager ativo!</b>\n\n"
-        "Para registrar emojis animados, envie uma mensagem aqui contendo "
-        "os emojis animados que deseja usar nas mensagens agendadas.\n\n"
-        "O sistema extrai o ID automaticamente via API do Telegram e salva o mapeamento. "
-        "Depois é só usar o emoji normalmente no dashboard — ele será animado no envio! 🔥💎🚀",
+        "📲 <b>Adicionar a um grupo:</b> toque no botão abaixo e escolha o grupo. "
+        "Assim que eu entrar, ele aparece <b>automaticamente no painel</b>.\n\n"
+        "🔥 <b>Emojis animados:</b> envie aqui uma mensagem com os emojis animados que deseja usar "
+        "— o ID é salvo automaticamente para uso nas mensagens.",
         parse_mode="HTML",
+        reply_markup=kb,
     )
+
+
+async def cmd_add_group(update, context) -> None:
+    """Mostra o botão para adicionar o bot a um grupo (deep link startgroup)."""
+    me = await context.bot.get_me()
+    add_url = f"https://t.me/{me.username}?startgroup=novo"
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton("➕ Selecionar grupo e me adicionar", url=add_url)
+    ]])
+    await update.message.reply_text(
+        "Toque no botão e <b>escolha o grupo</b> onde quer me adicionar.\n"
+        "Ao entrar, eu registro o grupo no painel automaticamente. ✅",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
+
+
+def _register_group_from_chat(chat) -> tuple:
+    """Registra o grupo no config se ainda não existir. Retorna (registrado, nome, key)."""
+    import db as _db
+    import re as _re
+    cfg = _db.load_config()
+    groups = cfg.setdefault("groups", {})
+
+    # já registrado por chat_id?
+    for k, g in groups.items():
+        if str(g.get("id")) == str(chat.id):
+            return (False, g.get("name", k), k)
+
+    base = "grp_" + (_re.sub(r"[^a-z0-9]+", "", (chat.title or "grupo").lower())[:14] or "novo")
+    key, i = base, 2
+    while key in groups:
+        key = f"{base}{i}"; i += 1
+
+    groups[key] = {
+        "name": chat.title or key,
+        "id": str(chat.id),
+        "default_buttons": [],
+        "color": "#229ED9",
+    }
+    _db.save_config(cfg)
+    return (True, groups[key]["name"], key)
+
+
+async def on_my_chat_member(update, context) -> None:
+    """Detecta quando o bot é adicionado/removido de um grupo e registra no painel."""
+    cm = update.my_chat_member
+    if not cm:
+        return
+    chat = cm.chat
+    if chat.type not in ("group", "supergroup"):
+        return
+
+    new_status = cm.new_chat_member.status if cm.new_chat_member else None
+    if new_status not in ("member", "administrator"):
+        return  # saiu/foi removido/banido — ignora
+
+    try:
+        registered, name, key = _register_group_from_chat(chat)
+    except Exception as exc:
+        logger.error("Falha ao registrar grupo %s: %s", chat.id, exc)
+        return
+
+    try:
+        if registered:
+            logger.info("Grupo registrado via chat: %s (%s) → %s", name, chat.id, key)
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text=(f"✅ <b>Conectado!</b>\n\nEste grupo foi registrado no painel como "
+                      f"<b>{name}</b>.\nAgora você já pode agendar mensagens para ele no dashboard. 🚀"),
+                parse_mode="HTML",
+            )
+        else:
+            logger.info("Grupo já estava registrado: %s (%s)", name, chat.id)
+    except Exception as exc:
+        logger.warning("Não consegui enviar confirmação no grupo %s: %s", chat.id, exc)
 
 
 async def handle_emoji_registration(update, context) -> None:
@@ -191,10 +280,14 @@ async def handle_sticker_registration(update, context) -> None:
 
 def setup_handlers(app) -> None:
     """Registra handlers de comandos e mensagens no Application do Telegram."""
-    from telegram.ext import MessageHandler, CommandHandler
+    from telegram.ext import MessageHandler, CommandHandler, ChatMemberHandler
     from telegram.ext import filters as tg_filters
 
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler(["adicionar", "grupo", "grupos"], cmd_add_group))
+
+    # Bot adicionado/removido de um grupo → registra o grupo no painel
+    app.add_handler(ChatMemberHandler(on_my_chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
 
     # Stickers em chat privado → retorna o file_id correto para este bot
     app.add_handler(MessageHandler(
@@ -207,7 +300,7 @@ def setup_handlers(app) -> None:
         tg_filters.ChatType.PRIVATE & ~tg_filters.COMMAND & ~tg_filters.Sticker.ALL,
         handle_emoji_registration,
     ))
-    logger.info("Handlers configurados: stickers + emojis animados")
+    logger.info("Handlers configurados: /adicionar, grupos, stickers e emojis")
 
 
 # ── Conversão para vídeo bolinha (formato quadrado) ──────────────────────────
