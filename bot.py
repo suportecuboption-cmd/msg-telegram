@@ -107,34 +107,49 @@ async def cmd_start(update, context) -> None:
         add_url = None
 
     kb = None
+    link_line = ""
     if add_url:
         kb = InlineKeyboardMarkup([[
             InlineKeyboardButton("➕ Adicionar a um grupo", url=add_url)
         ]])
+        link_line = f"\nSe o botão não abrir: <a href=\"{add_url}\">{add_url}</a>\n"
 
     await update.message.reply_text(
         "🤖 <b>Bot Manager ativo!</b>\n\n"
         "📲 <b>Adicionar a um grupo:</b> toque no botão abaixo e escolha o grupo. "
-        "Assim que eu entrar, ele aparece <b>automaticamente no painel</b>.\n\n"
-        "🔥 <b>Emojis animados:</b> envie aqui uma mensagem com os emojis animados que deseja usar "
+        "Assim que eu entrar, ele aparece <b>automaticamente no painel</b>."
+        + link_line +
+        "\n🔥 <b>Emojis animados:</b> envie aqui uma mensagem com os emojis animados que deseja usar "
         "— o ID é salvo automaticamente para uso nas mensagens.",
         parse_mode="HTML",
         reply_markup=kb,
+        disable_web_page_preview=True,
     )
 
 
 async def cmd_add_group(update, context) -> None:
     """Mostra o botão para adicionar o bot a um grupo (deep link startgroup)."""
     me = await context.bot.get_me()
+    if not me.username:
+        await update.message.reply_text(
+            "⚠️ Este bot ainda não tem um @username definido no BotFather, "
+            "então não consigo gerar o link de adicionar a grupo."
+        )
+        return
+
     add_url = f"https://t.me/{me.username}?startgroup=novo"
     kb = InlineKeyboardMarkup([[
         InlineKeyboardButton("➕ Selecionar grupo e me adicionar", url=add_url)
     ]])
     await update.message.reply_text(
         "Toque no botão e <b>escolha o grupo</b> onde quer me adicionar.\n"
-        "Ao entrar, eu registro o grupo no painel automaticamente. ✅",
+        f"Se o botão não abrir, use este link:\n👉 <a href=\"{add_url}\">{add_url}</a>\n\n"
+        "Ao entrar, eu registro o grupo no painel automaticamente. ✅\n\n"
+        "<i>⚠️ Importante:</i> no <b>@BotFather → Bot Settings → Allow Groups?</b> precisa estar "
+        "<b>Enabled</b>, senão o Telegram não deixa me adicionar a grupos.",
         parse_mode="HTML",
         reply_markup=kb,
+        disable_web_page_preview=True,
     )
 
 
