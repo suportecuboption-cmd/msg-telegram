@@ -3366,7 +3366,12 @@ async function confirmSend() {
 
 // ═════════════════════════ CONFIG PAGE ═══════════════════
 
-function renderConfig() {
+let _botsList = [];
+async function renderConfig() {
+  try {
+    const r = await fetch("/api/bots");
+    _botsList = await r.json();
+  } catch { _botsList = []; }
   renderGroupsList();
   renderButtonsList();
 }
@@ -3388,11 +3393,18 @@ function renderGroupsList() {
           <label class="form-label">Nome</label>
           <input class="form-control form-control-sm g-name" value="${esc(g.name || "")}" placeholder="Nome do grupo">
         </div>
-        <div class="col-3">
-          <label class="form-label">ID do chat (ex: -1001234567890)</label>
+        <div class="col-2">
+          <label class="form-label">ID do chat</label>
           <input class="form-control form-control-sm g-id" value="${esc(g.id || "")}" placeholder="-100...">
         </div>
-        <div class="col-3">
+        <div class="col-2">
+          <label class="form-label">Bot responsável</label>
+          <select class="form-select form-select-sm g-bot">
+            <option value="">Automático (primário)</option>
+            ${_botsList.map(b => `<option value="${esc(b.id)}" ${g.bot_id === b.id ? "selected" : ""}>${esc(b.name || b.id)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="col-2">
           <label class="form-label">Botões padrão</label>
           <div style="display:flex;flex-wrap:wrap;gap:4px;padding-top:2px;">
             ${Object.keys(cfg.button_configs || {}).map(bk => `
@@ -3471,6 +3483,7 @@ async function saveConfig() {
       name: row.querySelector(".g-name").value,
       id:   row.querySelector(".g-id").value,
       color: row.querySelector(".g-color")?.value || _GROUP_DEFAULT_COLOR,
+      bot_id: row.querySelector(".g-bot")?.value || null,
       default_buttons: defBtns,
     };
   });

@@ -769,8 +769,7 @@ def create_app() -> Flask:
     @app.route("/api/messages/<message_id>/send-now", methods=["POST"])
     @login_required
     def send_now(message_id):
-        bot = _manager.get_bot() if _manager else None
-        if not bot or not _loop:
+        if not _manager or not _loop or not _manager.get_bot():
             return jsonify({"error": "Nenhum bot online — ative pelo menos um bot"}), 503
 
         data  = request.get_json(force=True) or {}
@@ -792,6 +791,13 @@ def create_app() -> Flask:
             if not group or not group.get("id"):
                 results.append({"group": gk, "success": False, "error": "Grupo sem ID"})
                 continue
+
+            # usa o BOT DONO do grupo; se não tiver dono/estiver offline, cai no primeiro
+            bot = _manager.get_bot(group.get("bot_id")) or _manager.get_bot()
+            if not bot:
+                results.append({"group": gk, "success": False, "error": "Bot do grupo offline"})
+                continue
+
             button_keys = group.get("default_buttons", [])
             for sched in message.get("schedules", []):
                 if sched.get("group") == gk:

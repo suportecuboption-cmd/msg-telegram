@@ -153,16 +153,28 @@ async def cmd_add_group(update, context) -> None:
     )
 
 
-def _register_group_from_chat(chat) -> tuple:
-    """Registra o grupo no config se ainda não existir. Retorna (registrado, nome, key)."""
+def _register_group_from_chat(chat, bot_token: Optional[str] = None) -> tuple:
+    """Registra o grupo no config se ainda não existir. Retorna (registrado, nome, key).
+    Associa o grupo ao bot dono (pelo token), para o multi-bot funcionar."""
     import db as _db
     import re as _re
     cfg = _db.load_config()
     groups = cfg.setdefault("groups", {})
 
-    # já registrado por chat_id?
+    # descobre o bot_id dono a partir do token
+    owner_bot_id = None
+    if bot_token:
+        for b in cfg.get("bots", []):
+            if b.get("token") == bot_token:
+                owner_bot_id = b.get("id")
+                break
+
+    # já registrado por chat_id? (atualiza o dono se faltava)
     for k, g in groups.items():
         if str(g.get("id")) == str(chat.id):
+            if owner_bot_id and not g.get("bot_id"):
+                g["bot_id"] = owner_bot_id
+                _db.save_config(cfg)
             return (False, g.get("name", k), k)
 
     base = "grp_" + (_re.sub(r"[^a-z0-9]+", "", (chat.title or "grupo").lower())[:14] or "novo")
@@ -175,6 +187,7 @@ def _register_group_from_chat(chat) -> tuple:
         "id": str(chat.id),
         "default_buttons": [],
         "color": "#229ED9",
+        "bot_id": owner_bot_id,
     }
     _db.save_config(cfg)
     return (True, groups[key]["name"], key)
@@ -194,7 +207,7 @@ async def on_my_chat_member(update, context) -> None:
         return  # saiu/foi removido/banido — ignora
 
     try:
-        registered, name, key = _register_group_from_chat(chat)
+        registered, name, key = _register_group_from_chat(chat, getattr(context.bot, "token", None))
     except Exception as exc:
         logger.error("Falha ao registrar grupo %s: %s", chat.id, exc)
         return
@@ -413,8 +426,13 @@ async def send_scheduled_message(
                 logger.info("Vídeo bolinha '%s' enviado para %s", message_name, chat_id)
             except FileNotFoundError:
                 logger.warning("Arquivo de vídeo não encontrado: %s", video_note)
+                raise RuntimeError(
+                    "Arquivo de vídeo não encontrado no servidor. Reenvie o vídeo "
+                    "(uploads antigos podem ter sido perdidos em redeploy)."
+                )
             except Exception as exc:
                 logger.error("Erro ao enviar vídeo bolinha '%s': %s", video_note, exc)
+                raise
             return
 
         # Normaliza parse_mode: "none"/vazio → None
@@ -834,10 +852,24 @@ def _parse_jsonb_local(v) -> dict:
     return {}
 
 
-def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None:
+def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict,
+                    bot_id: Optional[str] = None, primary_bot_id: Optional[str] = None) -> None:
+    """Agenda as mensagens. Com vários bots, cada grupo é tratado APENAS pelo seu
+    bot dono (group.bot_id). Grupos sem dono são tratados só pelo bot primário,
+    evitando envios duplicados."""
     scheduler.remove_all_jobs()
     timezone = config.get("timezone", "America/Sao_Paulo")
     job_count = 0
+
+    def _owns(group: dict) -> bool:
+        # Sem multi-bot (bot_id None) → este bot cuida de tudo (comportamento antigo)
+        if bot_id is None:
+            return True
+        owner = group.get("bot_id")
+        if owner:
+            return owner == bot_id
+        # grupo sem dono → só o bot primário cuida
+        return bot_id == primary_bot_id
 
     for message in load_messages().get("messages", []):
         if not message.get("active", True):
@@ -852,6 +884,9 @@ def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None
             if not group or not group.get("id"):
                 logger.warning("Grupo '%s' não encontrado ou sem ID configurado", group_key)
                 continue
+
+            if not _owns(group):
+                continue   # outro bot é o dono deste grupo
 
             button_keys = schedule.get("buttons", group.get("default_buttons", []))
             days = schedule.get("days", ["mon", "tue", "wed", "thu", "fri"])
@@ -887,15 +922,17 @@ def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None
             job_count += 1
 
     # ── Job de verificação automática de candles (a cada minuto, aos :30s) ──
-    scheduler.add_job(
-        check_candle_results,
-        trigger=CronTrigger(second=30, timezone=timezone),
-        id="candle_checker",
-        replace_existing=True,
-        misfire_grace_time=30,
-    )
+    # Só o bot primário roda o checker, para não duplicar atualizações no banco.
+    if bot_id is None or bot_id == primary_bot_id:
+        scheduler.add_job(
+            check_candle_results,
+            trigger=CronTrigger(second=30, timezone=timezone),
+            id="candle_checker",
+            replace_existing=True,
+            misfire_grace_time=30,
+        )
 
-    logger.info("%d agendamento(s) de mensagem + candle checker configurados", job_count)
+    logger.info("Bot %s: %d agendamento(s) configurados", bot_id or "default", job_count)
 
 
 async def reload_scheduler(scheduler: AsyncIOScheduler, bot: Bot, config: dict) -> None:

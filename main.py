@@ -72,6 +72,16 @@ def _is_valid_token(token: str) -> bool:
     return bool(token) and token not in _PLACEHOLDER_TOKENS and ":" in token
 
 
+def _primary_bot_id(config: dict) -> str:
+    """Bot 'primário' = primeiro bot com token válido. Cuida dos grupos sem dono
+    e roda o verificador de candles (evita duplicação no multi-bot)."""
+    bots = config.get("bots", [])
+    for b in bots:
+        if _is_valid_token(b.get("token", "")):
+            return b.get("id")
+    return bots[0].get("id") if bots else None
+
+
 class BotManager:
     """Gerencia múltiplas instâncias de bot do Telegram simultaneamente."""
 
@@ -113,7 +123,7 @@ class BotManager:
             scheduler = AsyncIOScheduler(
                 timezone=config.get("timezone", "America/Sao_Paulo")
             )
-            bot_module.setup_scheduler(scheduler, app.bot, config)
+            bot_module.setup_scheduler(scheduler, app.bot, config, bot_id, _primary_bot_id(config))
             bot_module.setup_handlers(app)
             scheduler.start()
 
@@ -136,10 +146,11 @@ class BotManager:
 
     async def reload_scheduler(self, config: dict) -> None:
         import bot as bot_module
+        primary = _primary_bot_id(config)
         for bot_id, scheduler in self._schedulers.items():
             app = self._apps.get(bot_id)
             if app and scheduler:
-                bot_module.setup_scheduler(scheduler, app.bot, config)
+                bot_module.setup_scheduler(scheduler, app.bot, config, bot_id, primary)
         if self._apps:
             logger.info("Scheduler recarregado para %d bot(s)", len(self._apps))
 
